@@ -331,4 +331,13 @@ def export_engine(game, out):
     rpg = _find(game, "RPG.EXE").read_bytes()
     hdr = struct.unpack_from("<H", rpg, 8)[0] * 16
     (out / "rpg_ds.bin").write_bytes(rpg[hdr + 0xF290:hdr + 0xF290 + 0x8000])
+    summary["places"] = export_places(rpg[hdr + 0xF290:hdr + 0xF290 + 0x8000], out)
     return summary
+
+
+def export_places(ds, out):
+    """乘龍念法 destinations: 16 names of 4 glyphs at DS:3333 (RPG 0x382C).
+    Their entry points are the words at DS:3313, read from the state block."""
+    names = [ds[0x3333 + 8 * i:0x333B + 8 * i].decode("big5", "replace").strip("\u3000 ") for i in range(16)]
+    (out / "places.json").write_text(json.dumps({"places": names}, ensure_ascii=False))
+    return len(names)

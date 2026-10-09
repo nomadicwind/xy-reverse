@@ -27,6 +27,7 @@ const KIND_SLOTS := {7: [0], 3: [1], 5: [2], 2: [3], 6: [4], 1: [5, 6], 4: [7, 8
 var game: Game
 var ov: Overlay
 var data: Dictionary
+var menu_closed := false        # a skill warped away, so the menu ends
 
 
 func _init(g: Game) -> void:
@@ -231,7 +232,10 @@ func open() -> void:
 			0: await _status()
 			1: await _items()
 			2: await _equip()
-			3: await _skills()
+			3:
+				await _skills()
+				if menu_closed:
+					return
 			4:
 				if await _system():
 					break
@@ -493,8 +497,26 @@ func _skills() -> void:
 	if i < 0:
 		return
 	var sk: Dictionary = ids[i]
-	if int(sk.get("effect", 0)) != 1:
+	# RPG 0x341D: skill +0D bit 0x80 = battle only; 0x34AB: effect 5 土地神
+	# needs a map without 0x4000, effect 6 乘龍 a map with 0x8000 (world map)
+	var effect := int(sk.get("effect", 0))
+	var map_id := game.field.map_id
+	if int(sk.get("target_flags", 0)) & 0x80 or not (effect in [1, 5, 6]) \
+			or (effect == 5 and map_id & 0x4000) or (effect == 6 and not (map_id & 0x8000)):
 		await message("在此無法使用！")
+		return
+	if effect == 5 or effect == 6:
+		var dest := GameState.w(0x14) if effect == 5 else await _pick_place()
+		if dest < 0:
+			return
+		if not _pay(rec, sk):
+			await message("數值不夠！無法用此奇術！")
+			return
+		ov.clear()
+		game.play_sfx(int(sk.get("sfx", 0)) if effect == 5 else 0x13)
+		# the entry points of the 16 places, DS:3313
+		await game.warp(GameState.w(0x3313 + dest * 2))
+		menu_closed = true
 		return
 	var t := m
 	if String(sk.get("target", "")) != "self":
@@ -509,6 +531,22 @@ func _skills() -> void:
 			_heal_member(m, mm, sk)
 	elif not _heal_member(m, t, sk):
 		await message("此人無法使用！")
+
+
+## 乘龍念法 (RPG 0x378E): the places whose flag DS:612+n is 1, by name.
+func _pick_place() -> int:
+	var nj = Assets.load_json("places.json")
+	var names: Array = nj.get("places", []) if nj is Dictionary else []
+	var idx := []
+	var labels := []
+	for n in names.size():
+		if GameState.b(0x612 + n) == 1:
+			idx.append(n)
+			labels.append(names[n])
+	if idx.is_empty():
+		return -1
+	var k := await choose(labels, Vector2(56, 16), 0, 10)
+	return idx[k] if k >= 0 else -1
 
 
 func _pay(rec: int, sk: Dictionary) -> bool:
