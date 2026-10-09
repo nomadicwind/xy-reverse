@@ -43,6 +43,8 @@ func run(name: String, ref: int, object_index: int) -> void:
 	load_script(name)
 	runs += 1
 	last_event = "%s:%d (obj %d)" % [name, ref, object_index]
+	if trace:
+		print("[vm] event ", last_event)
 	obj = object_index
 	goto_event(ref)
 	running = true

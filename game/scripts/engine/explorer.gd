@@ -188,7 +188,9 @@ func _targets() -> Array:
 	var out := []
 	var w := f.map_w
 	for a in f.objects:
-		if a.event == 0 or a.hidden_state() or a.state == 3 or a.state == 8:
+		# states 7 and 9 are invisible but can still be examined (hidden
+		# treasure); only 3 and 8 are switched off (field.gd talk check)
+		if a.event == 0 or a.state == 3 or a.state == 8:
 			continue
 		var oc := f.pos_to_cell(a.pos)
 		var goals := {}
