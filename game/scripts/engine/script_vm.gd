@@ -171,8 +171,19 @@ func _exec(op: int, args: Array) -> void:
 				var sc := GameState.scene_of_entry(int(p[0]))
 				if sc.is_empty():
 					continue
-				var o: Array = sc["objects"][int(p[2]) / 2]
-				var k := int(p[1]) / 2
+				# RPG.EXE 0x60EA: word at scene + 6 + A + B*12, A signed, so it
+				# can reach the previous object or the scene header
+				var lin := (Actor._s16(int(p[1])) + int(p[2]) * 12) / 2
+				var objs: Array = sc["objects"]
+				if lin < 0:
+					var hk: String = ["map_id", "unknown", ""][lin + 3] if lin >= -3 else ""
+					if hk != "":
+						sc[hk] = (int(sc[hk]) + int(p[3])) & 0xFFFF if p[4] else int(p[3])
+					continue
+				if lin / 12 >= objs.size():
+					continue
+				var o: Array = objs[lin / 12]
+				var k := lin % 12
 				if p[4]:
 					o[k] = (int(o[k]) + int(p[3])) & 0xFFFF
 				else:

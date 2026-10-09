@@ -27,12 +27,12 @@ func choose() -> int:
 	queue_redraw()
 	while true:
 		await get_tree().process_frame
-		if Input.is_action_just_pressed("ui_down"):
+		if Keys.just("ui_down"):
 			sel = (sel + 1) % ITEMS.size()
 			queue_redraw()
-		elif Input.is_action_just_pressed("ui_up"):
+		elif Keys.just("ui_up"):
 			sel = (sel - 1 + ITEMS.size()) % ITEMS.size()
 			queue_redraw()
-		elif Input.is_action_just_pressed("ui_accept"):
+		elif Keys.just("ui_accept"):
 			return sel
 	return -1
