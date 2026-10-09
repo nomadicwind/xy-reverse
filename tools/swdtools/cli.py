@@ -10,7 +10,7 @@ import struct
 import sys
 from pathlib import Path
 
-from . import audio, maps
+from . import audio, engine, maps
 from .containers import is_compressed_block, lsk_entries, split_offsets16
 from .lzh import decompress
 from .pic import decode_pic, to_rgba, vga_palette
@@ -138,15 +138,19 @@ def main(argv=None):
     ex.add_argument("--game", required=True, help="directory containing SWDA.EXE")
     ex.add_argument("--out", required=True)
     ex.add_argument("--maps", help="comma separated map ids (default: all)")
-    ex.add_argument("--only", help="comma separated: maps,battle,sprites,text,audio")
+    ex.add_argument("--only", help="comma separated: engine,maps,battle,sprites,text,audio")
     ex.add_argument("--previews", action="store_true", help="also render full map PNGs")
     a = ap.parse_args(argv)
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    what = set((a.only or "maps,battle,sprites,text,audio").split(","))
+    what = set((a.only or "engine").split(","))
     only = {int(x) for x in a.maps.split(",")} if a.maps else None
     summary = {}
+    if "engine" in what:
+        summary["engine"] = engine.export_engine(a.game, out)
+        # the engine reads sound from engine/sfx and engine/music
+        summary["engine_sfx"] = extract_audio(a.game, out / "engine")
     if "maps" in what:
         summary["maps"] = extract_maps(a.game, out, only, a.previews)
     if "battle" in what:
