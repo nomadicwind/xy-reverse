@@ -53,7 +53,11 @@ func _ready() -> void:
 			await get_tree().process_frame
 			var ex := Explorer.new(game)
 			ex.debug = "--debug" in args
-			await ex.run(float(a.substr(10)))
+			var at := -1
+			for b in args:
+				if b.begins_with("--entry="):
+					at = int(b.substr(8))
+			await ex.run(float(a.substr(10)), at)
 			get_tree().quit()
 			return
 		elif a.begins_with("--vmtest="):

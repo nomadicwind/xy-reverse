@@ -21,13 +21,20 @@ func _init(g: Game) -> void:
 	game = g
 
 
-func run(seconds: float) -> void:
+## start_entry >= 0 skips the new game and starts at that entry point.
+func run(seconds: float, start_entry := -1) -> void:
 	Overlay.auto_continue = true
 	Engine.time_scale = 64.0
 	game.bot = true
 	game.vm.max_ops = 20000
 	game.defeated.connect(func(): print("[explore] party defeated"))
-	await game.start_new_game()
+	if start_entry >= 0:
+		GameState.new_game()
+		game.field.load_entry(start_entry)
+		game._sync_palette()
+		game.set_brightness(1.0)
+	else:
+		await game.start_new_game()
 	var t_end := Time.get_ticks_msec() + int(seconds * 1000.0)
 	_heartbeat(t_end)
 	var idle := 0
@@ -39,6 +46,15 @@ func run(seconds: float) -> void:
 		if not acted:
 			idle += 1
 			await _wander(8)
+			if debug and idle == 1:
+				var f := game.field
+				var c := f.leader_cell()
+				print("[explore] stuck at cell %d (%d,%d) px=%d py=%d view=%d,%d reach=%d" % [c, c % f.map_w, c / f.map_w, f.px[0], f.py[0], f.view_x, f.view_y, _reach().size()])
+				for r in range(-2, 3):
+					var line := ""
+					for k in range(-4, 5):
+						line += "%04x " % f.cell(c + r * f.map_w + k)
+					print("   ", line)
 			if idle % 20 == 0:
 				print("[explore] nothing reachable at entry %d (map %d)" % [game.field.entry_ref, game.field.map_id])
 		else:

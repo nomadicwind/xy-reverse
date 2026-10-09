@@ -138,10 +138,9 @@ func _build_map() -> void:
 	var chunk: Dictionary = m["chunks"][0]
 	map_w = int(chunk["w"])
 	map_h = int(chunk["h"])
-	# offsets in scenes and zones count from two bytes before the entry's
-	# offset table (checked against the zone rectangles, which only land on
-	# cells flagged 0x1000 with this base)
-	base = 2 * m["chunks"].size() + 6
+	# scene, zone and view offsets count from the start of the tilemap entry;
+	# "base" is where chunk 0's cells sit (older extractions: after the table)
+	base = int(chunk.get("base", 2 * m["chunks"].size() + 6))
 	cells = PackedInt32Array(chunk["cells"])
 
 	mat_tiles = _material(-1, -1)

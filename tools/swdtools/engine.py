@@ -20,7 +20,7 @@ import struct
 from pathlib import Path
 
 from . import battle, scenes, script
-from .containers import is_compressed_block, lsk_entries, split_offsets16
+from .containers import is_compressed_block, lsk_entries, offsets16, split_offsets16
 from .lzh import decompress
 from .pic import decode_pic
 
@@ -57,13 +57,16 @@ def _tilemap(data):
     if not parts:
         return None
     chunks = []
-    for p in parts:
+    for p, off in zip(parts, offsets16(data)):
         if len(p) < 4:
             continue
         h, w = struct.unpack_from("<HH", p, 0)
         if w == 0 or h == 0 or len(p) < 4 + w * h * 2:
             return None if not chunks else chunks
-        chunks.append({"w": w, "h": h, "cells": list(struct.unpack_from("<%dH" % (w * h), p, 4))})
+        # "base": byte offset of the first cell inside the entry, which is
+        # what object, zone and view offsets in the scenes count from
+        chunks.append({"w": w, "h": h, "base": off + 4,
+                       "cells": list(struct.unpack_from("<%dH" % (w * h), p, 4))})
     return chunks or None
 
 
