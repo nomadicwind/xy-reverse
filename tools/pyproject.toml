@@ -1,0 +1,15 @@
+[project]
+name = "swdtools"
+version = "0.1.0"
+description = "Asset tools for 轩辕剑外传：枫之舞 (SWDA)"
+requires-python = ">=3.10"
+dependencies = ["pillow>=10"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+swdtools = "swdtools.cli:main"
+
+[tool.setuptools]
+packages = ["swdtools"]
