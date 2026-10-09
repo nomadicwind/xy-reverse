@@ -1,0 +1,2 @@
+[console_scripts]
+swdtools = swdtools.cli:main

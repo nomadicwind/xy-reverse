@@ -1,0 +1,22 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e 'tools[test]'
+      - run: pytest tools/tests
+  godot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot 4.3
+        run: |
+          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q godot.zip
+      - name: Import project and parse scripts
+        run: ./Godot_v4.3-stable_linux.x86_64 --headless --path game --import

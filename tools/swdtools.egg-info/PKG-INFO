@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: swdtools
+Version: 0.1.0
+Summary: Asset tools for 轩辕剑外传：枫之舞 (SWDA)
+Requires-Python: >=3.10
+Requires-Dist: pillow>=10
+Provides-Extra: test
+Requires-Dist: pytest>=8; extra == "test"

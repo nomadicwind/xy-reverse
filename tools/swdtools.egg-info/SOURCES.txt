@@ -1,0 +1,16 @@
+pyproject.toml
+swdtools/__init__.py
+swdtools/__main__.py
+swdtools/audio.py
+swdtools/cli.py
+swdtools/containers.py
+swdtools/lzh.py
+swdtools/maps.py
+swdtools/pic.py
+swdtools.egg-info/PKG-INFO
+swdtools.egg-info/SOURCES.txt
+swdtools.egg-info/dependency_links.txt
+swdtools.egg-info/entry_points.txt
+swdtools.egg-info/requires.txt
+swdtools.egg-info/top_level.txt
+tests/test_formats.py
