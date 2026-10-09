@@ -8,6 +8,7 @@ extends Node
 ##   --vmtest=<CHNAn|all>  run every script event once and report problems
 ##   --battle=<n>          fight battle group value n (0 = random encounter)
 ##   --event=<n>           run script event n of the starting scene
+##   --learn=<n>           teach the leader skill n (to try spells)
 
 var game: Game
 
@@ -24,18 +25,28 @@ func _ready() -> void:
 	var auto := ""
 	var fight := -1
 	var event := -1
+	var learn := []
 	for a in args:
 		if a.begins_with("--entry="):
 			var v := a.substr(8)
 			entry = v.hex_to_int() if v.begins_with("0x") else int(v)
 		elif a.begins_with("--battle="):
 			fight = int(a.substr(9))
+		elif a.begins_with("--learn="):
+			learn.append(int(a.substr(8)))
 		elif a.begins_with("--event="):
 			event = int(a.substr(8))
 		elif a == "--newgame":
 			newgame = true
 		elif a.begins_with("--autoplay="):
 			auto = a.substr(11)
+		elif a == "--battletest":
+			_start_game()
+			game.field.load_entry(8)
+			await get_tree().process_frame
+			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
 		elif a.begins_with("--vmtest="):
 			_start_game()
 			await get_tree().process_frame
@@ -49,6 +60,12 @@ func _ready() -> void:
 	if entry >= 0 or fight >= 0 or event >= 0:
 		_start_game()
 		game.field.load_entry(entry if entry >= 0 else 8)
+		for sk in learn:
+			for k in 50:
+				if GameState.b(GameState.PARTY + 0x6D + k) == 0:
+					GameState.setb(GameState.PARTY + 0x6D + k, sk)
+					GameState.setw(GameState.PARTY + 0x55, 999)
+					break
 		game._sync_palette()
 		game.set_brightness(1.0)
 		if fight >= 0:

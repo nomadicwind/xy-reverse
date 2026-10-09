@@ -39,3 +39,25 @@ static func run_all(game: Game, which: String) -> void:
 			print("[vmtest] %s %s %dms" % [name, k, Time.get_ticks_msec() - t0])
 			total += 1
 	print("[vmtest] done, %d events" % total)
+
+
+## Runs every battle group with automatic commands and a round limit.
+static func run_battles(game: Game) -> void:
+	Overlay.auto_continue = true
+	Engine.time_scale = 64.0
+	var groups: Array = Battle.battle_data().get("groups", [])
+	var n := 0
+	for g in groups:
+		if not (g is Dictionary) or not g.has("script"):
+			continue
+		GameState.new_game()
+		var b := Battle.new(game)
+		b.max_rounds = 12
+		game.add_child(b)
+		game.battle_scene = b
+		var t0 := Time.get_ticks_msec()
+		var r: int = await b.run(int(g["rpg_value"]))
+		game.battle_scene = null
+		print("[battletest] %d rounds=%d result=%d %dms" % [int(g["rpg_value"]), b.rounds, r, Time.get_ticks_msec() - t0])
+		n += 1
+	print("[battletest] done, %d groups" % n)
