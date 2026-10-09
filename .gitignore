@@ -1,0 +1,15 @@
+# Original game data and anything extracted from it are copyrighted.
+# They stay on your machine; the repo only holds code and our own data.
+/original/
+game/assets/extracted/
+build/
+
+# Godot
+game/.godot/
+*.import
+!game/icon.svg.import
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
