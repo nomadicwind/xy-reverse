@@ -18,6 +18,7 @@ var _held_dir := -1
 var music: AudioStreamPlayer
 var sfx: AudioStreamPlayer
 var auto_events := true
+var bot := false          # tests: an Explorer drives the field instead of the keys
 
 
 func _ready() -> void:
@@ -100,7 +101,7 @@ func _process(delta: float) -> void:
 	if cdown and not _cancel_was_down:
 		_cancel = true
 	_cancel_was_down = cdown
-	if busy or not Assets.available() or field.cells.is_empty():
+	if bot or busy or not Assets.available() or field.cells.is_empty():
 		_accept = false
 		_cancel = false
 		return
@@ -126,7 +127,8 @@ func _input_dir() -> int:
 	return -1
 
 
-func _field_tick(accept: bool) -> void:
+## One field tick. d: direction to walk, or -2 to read the keys.
+func _field_tick(accept: bool, d := -2) -> void:
 	# pending event after a battle (0x610)
 	var pend := GameState.w(0x610)
 	if pend != 0:
@@ -137,7 +139,8 @@ func _field_tick(accept: bool) -> void:
 	if z != null:
 		if await _zone(z, accept):
 			return
-	var d := _input_dir()
+	if d == -2:
+		d = _input_dir()
 	if d >= 0:
 		var hit := field.step(d)
 		if hit >= 0:

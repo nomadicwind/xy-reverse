@@ -9,6 +9,7 @@ extends Node
 ##   --battle=<n>          fight battle group value n (0 = random encounter)
 ##   --event=<n>           run script event n of the starting scene
 ##   --learn=<n>           teach the leader skill n (to try spells)
+##   --explore=<seconds>   let a bot play a new game (scripts/engine/explorer.gd)
 
 var game: Game
 
@@ -45,6 +46,14 @@ func _ready() -> void:
 			game.field.load_entry(8)
 			await get_tree().process_frame
 			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
+		elif a.begins_with("--explore="):
+			_start_game()
+			await get_tree().process_frame
+			var ex := Explorer.new(game)
+			ex.debug = "--debug" in args
+			await ex.run(float(a.substr(10)))
 			get_tree().quit()
 			return
 		elif a.begins_with("--vmtest="):

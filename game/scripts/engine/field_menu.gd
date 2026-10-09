@@ -166,8 +166,9 @@ func choose(labels: Array, at: Vector2, sel := 0, rows := 8, extra := Callable()
 	var r := ov.add_frame(at, cols, n)
 	var top := clampi(sel - n + 1, 0, maxi(0, labels.size() - n))
 	if Overlay.auto_continue:
+		# tests: a random pick, often a cancel so menu loops always end
 		ov.pop_frames(keep)
-		return 0
+		return -1 if randi() % 3 == 0 else randi() % labels.size()
 	while true:
 		_clear_rect(r)
 		for k in n:
