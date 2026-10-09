@@ -171,6 +171,20 @@ func _dump() -> void:
 
 
 func _top_up() -> void:
+	# random shopping fills the bag, and a full bag refuses story items:
+	# keep one of each item once it gets crowded
+	var ids := []
+	for k in 50:
+		var v := GameState.w(GameState.ITEMS + k * 2)
+		if v != 0:
+			ids.append(v)
+	if ids.size() > 40:
+		var keep := []
+		for v in ids:
+			if not keep.has(v):
+				keep.append(v)
+		for k in 50:
+			GameState.setw(GameState.ITEMS + k * 2, keep[k] if k < keep.size() else 0)
 	for i in GameState.party_count():
 		var rec := GameState.PARTY + i * GameState.PARTY_REC
 		if GameState.w(rec + 0x2F) < 3000:
