@@ -7,6 +7,7 @@ extends Node
 ##   --autoplay=<file>     run an input script (see scripts/autoplay.gd)
 ##   --vmtest=<CHNAn|all>  run every script event once and report problems
 ##   --battle=<n>          fight battle group value n (0 = random encounter)
+##   --creaturetest        capture, summon and 防禦 creatures in one scripted battle
 ##   --event=<n>           run script event n of the starting scene
 ##   --learn=<n>           teach the leader skill n (to try spells)
 ##   --explore=<seconds>   let a bot play a new game (scripts/engine/explorer.gd)
@@ -46,6 +47,13 @@ func _ready() -> void:
 			game.field.load_entry(8)
 			await get_tree().process_frame
 			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
+		elif a == "--creaturetest":
+			_start_game()
+			game.field.load_entry(8)
+			await get_tree().process_frame
+			await VmTest.run_creatures(game)
 			get_tree().quit()
 			return
 		elif a.begins_with("--explore="):

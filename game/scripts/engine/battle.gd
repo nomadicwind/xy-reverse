@@ -35,7 +35,10 @@ var money_total := 0
 var crit_counter := 21             # RPG DS:592
 var flee_tries := 0
 var max_rounds := 0                # tests: stop after this many rounds
+var allies: Array = [null, null]   # summoned monsters, DS:2384 (docs/CREATURES.md)
 var rounds := 0
+var test_plan: Array = []          # tests: Callables (member) -> command, used first
+var force_random := false          # tests: treat a scripted group as a random encounter
 
 var _pal_img: Image
 var _pal_tex: Texture2D
@@ -66,8 +69,8 @@ func run(value: int) -> int:
 	_menu_rsk = Assets.rsk("MENU")
 	crit_counter = GameState.w(0x592) if GameState.w(0x592) > 0 else 21
 	var v := value & 0x3FFF
-	random_encounter = v == 0
-	if random_encounter:
+	random_encounter = v == 0 or force_random
+	if v == 0:
 		v = _encounter_group()
 		if v == 0:
 			return Result.WIN
@@ -86,6 +89,7 @@ func run(value: int) -> int:
 	_redraw()
 	await game.fade(true)
 	await _run_script(0)
+	_return_allies()
 	_write_back()
 	await game.fade(false)
 	_teardown()
@@ -246,6 +250,7 @@ func _add_enemy(id: int, x: int) -> Dictionary:
 		"luck": int(mo["luck"]), "eva": int(mo["evasion"]),
 		"immune": int(mo["immune_physical"]), "res": [0] + Array(mo["element_resist"]),
 		"status": int(mo["flags"]), "timers": {}, "decoys": 0, "gone": false, "node": null,
+		"exp": int(mo.get("exp", 0)), "money": int(mo.get("money", 0)),
 	}
 	e["base"] = {"atk": e["atk"], "def": e["def"], "agi": e["agi"], "eva": e["eva"]}
 	var p = Assets.pictures(4, id)   # CD.LSK
@@ -290,6 +295,18 @@ func _redraw() -> void:
 		_numbers(int(m["hp"]), Vector2(x, y), NUM_YELLOW if _alive(m) else NUM_RED)
 		_numbers(int(m["mp"]), Vector2(x, y + 9), NUM_CYAN)
 		_numbers(int(m["sta"]), Vector2(x + 40, y + 9), NUM_GREEN)
+	# FIG 0x34FA: summoned monsters show only as a name at the top
+	for a in allies:
+		if a != null:
+			var lbl := Node2D.new()
+			var nm := String(a["name"])
+			var at := Vector2(8 + int(a["slot"]) * 80, 4)
+			lbl.draw.connect(func():
+				for k in nm.length():
+					var r := Assets.glyph_rect(nm[k])
+					if r.size != Vector2.ZERO and Assets.font_texture:
+						lbl.draw_texture_rect_region(Assets.font_texture, Rect2(at + Vector2(k * 16, 0), r.size), r, overlay.pal_color(0x0F)))
+			_hud.add_child(lbl)
 	for e in enemies:
 		if e["node"]:
 			e["node"].visible = _alive(e) or (int(e["status"]) & 0x8000 and not e["gone"])
@@ -581,6 +598,9 @@ func _has_item(id: int) -> bool:
 ## FIG 0x1571 / 0x607 / 0x6AD. Returns the script offset to jump to after
 ## the round (victory / defeat / flee), or -1 to carry on.
 func _round() -> int:
+	for a in allies:
+		if a != null:
+			a["ready"] = true
 	var cmds := {}
 	for m in members:
 		if not _can_act(m):
@@ -600,9 +620,19 @@ func _round() -> int:
 	for e in enemies.slice(0, 6):
 		if _alive(e):
 			order.append([randi_range(0, maxi(0, int(e["luck"]) - 1)) + int(e["agi"]), 1, e])
+	for a in allies:
+		if a != null and a["ready"]:
+			order.append([randi_range(0, maxi(0, int(a["luck"]) - 1)) + int(a["agi"]), 2, a])
 	order.sort_custom(func(a, b): return a[0] > b[0])
 	for o in order:
 		var u: Dictionary = o[2]
+		if u["side"] == 2:
+			if allies.has(u):
+				await _ally_act(u)
+				_redraw()
+				if _won():
+					return int(group["on_victory"])
+			continue
 		if not _can_act(u):
 			continue
 		if u["side"] == 0:
@@ -634,11 +664,28 @@ func _won() -> bool:
 ## Command input for one member: attack, skills, items, flee / capture.
 func _command(m: Dictionary):
 	if Overlay.auto_continue:
+		if not test_plan.is_empty():
+			return test_plan.pop_front().call(m) if int(m["slot"]) == 0 else {"kind": "defend"}
 		return {"kind": "attack", "target": _first_alive(enemies)}
 	_set_pose(m, 4)
+	# FIG 0x20B2: 煉妖術 only for member 0, once RPG DS:4F8 bit 0 is clear
+	var can_capture: bool = int(m["slot"]) == 0 and not (GameState.b(0x4F8) & 1)
 	while true:
-		var labels := ["攻擊", "奇術", "物品", "逃走"]
+		var labels := ["攻擊", "奇術", "物品", "防禦", "逃走"]
+		if can_capture:
+			labels.append("煉妖術")
 		var i: int = await _choose(labels, m)
+		if i == 3:
+			_set_pose(m, 0)
+			return {"kind": "defend"}
+		if i == 5:
+			var tc = await _pick_target(enemies)
+			if tc != null:
+				_set_pose(m, 0)
+				return {"kind": "capture", "target": tc}
+			continue
+		if i == 4:
+			i = 3
 		match i:
 			0:
 				var t = await _pick_target(enemies)
@@ -653,7 +700,10 @@ func _command(m: Dictionary):
 						_set_pose(m, 0)
 						return {"kind": "skill", "skill": sk, "target": t}
 			2:
-				var it = await _pick_item()
+				var it = await _pick_item(m)
+				if it != null and it.has("monster"):
+					_set_pose(m, 0)
+					return {"kind": "summon", "slot": it["slot"], "monster": it["monster"]}
 				if it != null:
 					var sk = _skill(int(it["item"]["skill"]))
 					var t = null
@@ -767,13 +817,17 @@ func _pick_skill_target(sk: Dictionary):
 	return {}
 
 
-func _pick_item():
+func _pick_item(m := {}):
 	var list := []
 	var labels := []
 	var items: Array = data["items"]
 	for k in 50:
 		var v := GameState.w(GameState.ITEMS + k * 2)
 		var id := v & 0x0FFF
+		if id >= 314 and _monster(id) != null:
+			list.append({"slot": k, "monster": _monster(id)})
+			labels.append(String(_monster(id)["name"]))
+			continue
 		if id == 0 or id >= items.size():
 			continue
 		var it: Dictionary = items[id]
@@ -784,8 +838,26 @@ func _pick_item():
 	if list.is_empty():
 		await _message("沒有可用的物品")
 		return null
-	var i := await _choose_scroll(labels, {"slot": 1})
-	return list[i] if i >= 0 else null
+	while true:
+		var i := await _choose_scroll(labels, {"slot": 1})
+		if i < 0:
+			return null
+		var mo = list[i].get("monster")
+		if mo == null:
+			return list[i]
+		# FIG 0x182C: monster +05 bit 2, and 體力 >= 2 x level
+		if not (_monster_byte5(mo) & 0x02):
+			await _message("現在無法使用！")
+		elif m.is_empty() or int(m["sta"]) < 2 * int(mo["level"]):
+			await _message("體力不夠，無法招喚！")
+		else:
+			return list[i]
+	return null
+
+
+static func _monster_byte5(mo: Dictionary) -> int:
+	var h := String(mo.get("header_raw", ""))
+	return h.substr(10, 2).hex_to_int() if h.length() >= 12 else 0
 
 
 ## Like _choose but pages through long lists, 6 lines at a time.
@@ -836,6 +908,12 @@ func _member_act(m: Dictionary, c) -> void:
 			await _cast(m, c["skill"], c.get("target"))
 		"item":
 			await _use_item(m, c)
+		"defend":
+			await _defend(m)
+		"capture":
+			await _capture(m, c.get("target"))
+		"summon":
+			await _summon(m, int(c["slot"]), c["monster"])
 
 
 ## FIG 0x12DC.
@@ -993,6 +1071,10 @@ func _apply_skill(caster: Dictionary, sk: Dictionary, targets: Array, enemy_cast
 					continue
 				var dmg := randi_range(0, lvl / 2 + 1) + int(sk.get("power", 0))
 				var el := int(sk.get("element", 0))
+				if enemy_caster and el == 1:
+					_grow_passive(t, 0xF5, 0xF9, dmg)
+				elif enemy_caster and el == 2:
+					_grow_passive(t, 0xFA, 0xFD, dmg)
 				var res := int(t["res"][el]) if el >= 1 and el <= 4 else 0
 				match res:
 					1:
@@ -1283,6 +1365,7 @@ func _attack_member(e: Dictionary, m: Dictionary) -> void:
 		m["decoys"] = int(m["decoys"]) - 1
 		await _message(_msg("0x1ee1", "替 身"), 0.3)
 		return
+	_grow_passive(m, 0xF2, 0xF4, dmg)
 	await _hurt(m, dmg)
 	var pz := int(mo.get("poison", 1))
 	if pz != 1 and _alive(m) and randi() % 10 <= pz:
@@ -1320,8 +1403,8 @@ func _victory() -> void:
 	for e in enemies:
 		if e.get("exp_lost", false):
 			continue
-		exp_total += int(e["mon"].get("exp", 0))
-		money_total += int(e["mon"].get("money", 0))
+		exp_total += int(e["exp"])
+		money_total += int(e["money"])
 	game.play_music_path("RX/RI079.RIX")
 	GameState.setw(GameState.MONEY, mini(0xFFFF, GameState.money() + money_total))
 	var live := _living(members)
@@ -1417,3 +1500,202 @@ func _defeat() -> void:
 	result = Result.LOSE
 	game.play_music_path("RX/RI041.RIX")
 	await _say_text("　全體陣亡！")
+
+
+# ---------------------------------------------------------------- creatures
+# docs/CREATURES.md: 煉妖術 capture, 防禦 with 法寶 creatures, summoned allies.
+
+func _free_item_slot() -> int:
+	for k in 50:
+		if GameState.w(GameState.ITEMS + k * 2) == 0:
+			return k
+	return -1
+
+
+## FIG 0xEA2: no roll and no cost; the conditions decide.
+func _capture(m: Dictionary, e) -> void:
+	if e == null or not _alive(e):
+		e = _first_alive(enemies)
+	if e == null:
+		return
+	_set_pose(m, 2)
+	game.play_sfx(0x10)
+	await _wait(3 * TICK)
+	_set_pose(m, 3)
+	await _message("煉妖術", 0.5)
+	var lv := int(members[0]["lvl"])
+	var el := int(e["lvl"])
+	var ok := random_encounter and _free_item_slot() >= 0 \
+		and not (int(e["mon"].get("flags", 0)) & 0xA000) and el <= lv + 7 \
+		and (lv < 5 or el <= lv - 5 or int(e["hp"]) <= int(e["hpm"]) >> 2)
+	if ok:
+		e["hp"] = 0
+		GameState.setw(GameState.ITEMS + _free_item_slot() * 2, int(e["id"]))
+		game.play_sfx(0x0F)
+		_redraw()
+		await _wait(9 * TICK)
+	else:
+		await _message(_msg("0x1df3", "失　敗"), 0.4)
+	_set_pose(m, 0)
+
+
+## FIG 0xBD0: 防禦 has no effect of its own; it fires the creatures in the
+## two 法寶 slots (+1E, +20).
+func _defend(m: Dictionary) -> void:
+	_set_pose(m, 4)
+	await _wait(4 * TICK)
+	for off in [0x1E, 0x20]:
+		var id := GameState.w(int(m["rec"]) + off)
+		if id >= 0xE6 and id <= 0xEB:
+			var kinds := [0x0E, 0x10, 0x12] if id <= 0xE8 else [0x1A, 0x1E, 0x14]
+			var n := 0
+			for e in enemies:
+				if not _alive(e) or not random_encounter or int(e["status"]) & 0xE000:
+					continue
+				if not int(e["mon"].get("species", 0)) in kinds:
+					continue
+				game.play_sfx(int(e["mon"].get("death_sfx", 26)))
+				e["hp"] = 0
+				e["status"] = 0
+				e["exp"] = 0
+				n += 1
+				_redraw()
+				await _message("血芝麻" if id <= 0xE8 else "青魚牙", 0.3)
+			if n:
+				_grow(m, off, id, n)
+		elif id >= 0xEC and id <= 0xEE:
+			var sum := 0
+			for e in enemies:
+				sum += int(e["money"])
+				e["money"] = 0
+			if sum > 0:
+				game.play_sfx(0x0D)
+				await _message("金　蠶", 0.3)
+				_grow(m, off, id, sum)
+	_redraw()
+	await _wait(8 * TICK)
+	_set_pose(m, 0)
+
+
+## FIG 0xDCE: counters per creature id at RPG DS:645, clamped at the
+## threshold, where the slot item turns into the next one.
+func _grow(m: Dictionary, off: int, id: int, n: int) -> void:
+	var ctr := 0x645 + 2 * (id - 0xE6)
+	var v := GameState.w(ctr) + n
+	var g = null
+	for row in data.get("creature_growth", []):
+		if int(row["id"]) == id:
+			g = row
+	if g == null:
+		return
+	var thr := int(g["threshold"])
+	if v >= thr:
+		v = thr
+		GameState.setw(int(m["rec"]) + off, int(g["next"]))
+	GameState.setw(ctr, mini(v, 0xFFFF))
+
+
+## Passive growth for both 法寶 slots of a party member hit by something.
+func _grow_passive(m: Dictionary, lo: int, hi: int, n: int) -> void:
+	if m.get("side", 0) != 0 or not m.has("rec") or n <= 0:
+		return
+	for off in [0x1E, 0x20]:
+		var id := GameState.w(int(m["rec"]) + off)
+		if id >= lo and id <= hi:
+			_grow(m, off, id, n)
+
+
+## FIG 0x1232 / 0x53E1: the monster leaves the inventory and fights on the
+## party side from the next round; it has no HP and is never drawn.
+func _summon(m: Dictionary, slot: int, mo: Dictionary) -> void:
+	var off := GameState.ITEMS + slot * 2
+	var id := int(mo["id"])
+	if GameState.w(off) & 0x0FFF != id:
+		return
+	var s := allies.find(null)
+	if s < 0:
+		await _message("要替換那一隻？", 0.3)
+		s = 0 if Overlay.auto_continue else await _pick_ally()
+		if s < 0:
+			return
+		GameState.setw(off, int(allies[s]["id"]))
+	else:
+		GameState.setw(off, 0)
+	game.play_sfx(0x0E)
+	m["sta"] = maxi(0, int(m["sta"]) - 2 * int(mo["level"]))
+	allies[s] = {
+		"side": 2, "slot": s, "id": id, "name": mo["name"], "mon": mo, "node": null,
+		"lvl": int(mo["level"]), "mp": int(mo["mp"]), "atk": int(mo["attack"]),
+		"agi": int(mo["agility"]), "luck": int(mo["luck"]), "ready": false,
+	}
+	_redraw()
+
+
+func _pick_ally() -> int:
+	var sel := 0
+	while true:
+		overlay.clear_text()
+		await overlay.write("{C14}" + String(allies[sel]["name"]), 8 + sel * 80, 9, false, 320)
+		while true:
+			await get_tree().process_frame
+			if Keys.just("ui_left") or Keys.just("ui_right"):
+				sel = 1 - sel
+				break
+			if Keys.just("ui_accept"):
+				overlay.clear_text()
+				return sel
+			if Keys.just("ui_cancel"):
+				overlay.clear_text()
+				return -1
+	return -1
+
+
+## FIG 0xF8E: enemy-like choice of skill, cast with member 0 as the caster;
+## anything that cannot be cast becomes a plain attack (no roll, no crit).
+func _ally_act(a: Dictionary) -> void:
+	var live := _living(enemies)
+	if live.is_empty():
+		return
+	var target: Dictionary = live[randi() % live.size()]
+	var mo: Dictionary = a["mon"]
+	if randi() % 10 <= int(mo.get("magic_freq", 0)):
+		var sid := 0
+		var sp: Array = mo.get("special_skills", [0, 0])
+		if randi() % 10 <= int(mo.get("special_freq", 0)):
+			sid = int(sp[randi() % 2])
+		else:
+			var ss: Array = mo.get("skills", [0, 0, 0])
+			sid = int(ss[2 - randi() % 3])
+		var sk = _skill(sid)
+		if sid and sk != null and int(a["mp"]) >= int(sk["cost"]) \
+				and not (_skill_target_kind(sk) in ["self", "ally"]):
+			a["mp"] = int(a["mp"]) - int(sk["cost"])
+			if Array(sk.get("media_required", [])).is_empty():
+				await _message(_msg("0x200c", "奇 術"), 0.3)
+				var caster: Dictionary = members[0]
+				var tg := _skill_targets(sk, caster, target if _skill_target_kind(sk) == "enemy" else null, 0)
+				await _play_anim(sk, caster, func(): await _apply_skill(caster, sk, tg, false))
+				return
+	await _message(_msg("0x1dfb", "攻 擊"), 0.2)
+	game.play_sfx(int(mo.get("attack_sfx", 40)))
+	if _can_act(target) and randi() % 12 < int(target["eva"]):
+		await _message(_msg("0x1e0d", "閃 躲"), 0.3)
+		return
+	var dmg := int(a["atk"]) - int(target["def"])
+	if int(target["immune"]) == 1 or dmg <= 0:
+		await _message("沒有效果", 0.3)
+		return
+	await _hurt(target, dmg)
+
+
+## Battle end (FIG 0x256): summoned monsters go back to the inventory, or
+## are lost when it is full.
+func _return_allies() -> void:
+	_compact_items()
+	for s in 2:
+		if allies[s] == null:
+			continue
+		var k := _free_item_slot()
+		if k >= 0:
+			GameState.setw(GameState.ITEMS + k * 2, int(allies[s]["id"]))
+		allies[s] = null

@@ -410,7 +410,7 @@ func _equip() -> void:
 		var cands := [{"slot": -1, "id": 0}] if k < 5 else []
 		for e in _inventory():
 			var it = _item(int(e["id"]))
-			if it == null or it.get("slot") == null:
+			if it == null:
 				continue
 			var kind := int(it.get("kind", 0)) & 0x0F
 			if k in KIND_SLOTS.get(kind, []):
