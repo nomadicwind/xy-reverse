@@ -18,6 +18,7 @@ var ended_by_restart := false
 var trace := false
 var max_ops := 0              # tests: stop an event after this many ops
 var runs := 0                 # events started, for test bots
+var last_event := ""          # script:event (object), for test bots
 
 
 func _init(g) -> void:
@@ -40,6 +41,7 @@ func goto_event(ref: int) -> void:
 func run(name: String, ref: int, object_index: int) -> void:
 	load_script(name)
 	runs += 1
+	last_event = "%s:%d (obj %d)" % [name, ref, object_index]
 	obj = object_index
 	goto_event(ref)
 	running = true

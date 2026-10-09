@@ -56,6 +56,7 @@ func add_picture(tex: Texture2D, region: Rect2, at: Vector2) -> void:
 	# a new portrait replaces the one at the same place
 	items = items.filter(func(it): return not (it["kind"] == "picture" and it["at"] == at))
 	items.append({"kind": "picture", "tex": tex, "region": region, "at": at})
+	_sync_pictures()
 	queue_redraw()
 
 
@@ -267,9 +268,7 @@ func _draw() -> void:
 	for it in items:
 		match it["kind"]:
 			"picture":
-				var mat := _picture_material()
-				# draw_texture_rect_region ignores materials, so use a child sprite cache
-				_draw_indexed(it["tex"], it["region"], it["at"])
+				pass    # child sprites, see _sync_pictures
 			"glyph":
 				if font == null:
 					continue
@@ -288,43 +287,40 @@ func _draw() -> void:
 var _pic_nodes := {}
 
 
-func _picture_material() -> ShaderMaterial:
-	return null
-
-
-## Pictures are indexed images: draw them through Sprite2D children with the
-## palette shader (CanvasItem.draw_* calls cannot carry a different material).
-func _draw_indexed(tex: Texture2D, region: Rect2, at: Vector2) -> void:
-	var key := "%s:%s" % [at, region]
-	var s: Sprite2D = _pic_nodes.get(key)
-	if s == null:
-		s = Sprite2D.new()
-		s.centered = false
-		s.region_enabled = true
-		var m := ShaderMaterial.new()
-		m.shader = SHADER
-		m.set_shader_parameter("transparent_index", 0xFE)
-		s.material = m
-		add_child(s)
-		_pic_nodes[key] = s
-	s.texture = tex
-	s.region_rect = region
-	s.position = at
-	(s.material as ShaderMaterial).set_shader_parameter("palette", palette_tex)
-	s.show_behind_parent = true
-	s.visible = true
-	s.set_meta("used", true)
+## Pictures are indexed images: they are Sprite2D children with the palette
+## shader (CanvasItem.draw_* calls cannot carry a different material). The
+## children are made and freed here, never from _draw, since changing the
+## tree while it is being drawn crashes the renderer.
+func _sync_pictures() -> void:
+	var wanted := {}
+	for it in items:
+		if it["kind"] == "picture":
+			wanted["%s:%s" % [it["at"], it["region"]]] = it
+	for k in _pic_nodes.keys():
+		if not wanted.has(k):
+			_pic_nodes[k].queue_free()
+			_pic_nodes.erase(k)
+	for k in wanted:
+		var it: Dictionary = wanted[k]
+		var s: Sprite2D = _pic_nodes.get(k)
+		if s == null:
+			s = Sprite2D.new()
+			s.centered = false
+			s.region_enabled = true
+			s.show_behind_parent = true
+			var m := ShaderMaterial.new()
+			m.shader = SHADER
+			m.set_shader_parameter("transparent_index", 0xFE)
+			s.material = m
+			add_child(s)
+			_pic_nodes[k] = s
+		s.texture = it["tex"]
+		s.region_rect = it["region"]
+		s.position = it["at"]
+		(s.material as ShaderMaterial).set_shader_parameter("palette", palette_tex)
 
 
 func _process(_d: float) -> void:
 	if waiting_icon.x >= 0:
 		queue_redraw()
-	# hide picture sprites whose item is gone
-	var wanted := {}
-	for it in items:
-		if it["kind"] == "picture":
-			wanted["%s:%s" % [it["at"], it["region"]]] = true
-	for k in _pic_nodes.keys():
-		if not wanted.has(k):
-			_pic_nodes[k].queue_free()
-			_pic_nodes.erase(k)
+	_sync_pictures()

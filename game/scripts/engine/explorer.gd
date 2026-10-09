@@ -16,6 +16,7 @@ var chapters_seen := {}
 var steps := 0
 var events := 0
 var battles := 0
+var dump_path := ""          # save the game state here with every status line
 
 
 func _init(g: Game) -> void:
@@ -23,7 +24,7 @@ func _init(g: Game) -> void:
 
 
 ## start_entry >= 0 skips the new game and starts at that entry point.
-func run(seconds: float, start_entry := -1) -> void:
+func run(seconds: float, start_entry := -1, resume := "") -> void:
 	Overlay.auto_continue = true
 	Engine.time_scale = 64.0
 	game.bot = true
@@ -32,7 +33,10 @@ func run(seconds: float, start_entry := -1) -> void:
 	game.defeated.connect(func():
 		print("[explore] party defeated")
 		lost[0] = true)
-	if start_entry >= 0:
+	if resume != "":
+		GameState.new_game()
+		game.load_saved(JSON.parse_string(FileAccess.get_file_as_string(resume)))
+	elif start_entry >= 0:
 		GameState.new_game()
 		game.field.load_entry(start_entry)
 		game._sync_palette()
@@ -77,8 +81,14 @@ func _heartbeat(t_end: int) -> void:
 		await game.get_tree().create_timer(5.0, true, false, true).timeout
 		beat += 1
 		if beat % 12 == 0:
-			print("[explore] status: entry %d map %d, %d steps, %d events, flags %d" % [
-				game.field.entry_ref, game.field.map_id, steps, events, _flag_count()])
+			print("[explore] status: entry %d map %d, %d steps, %d events, flags %d, last %s" % [
+				game.field.entry_ref, game.field.map_id, steps, events, _flag_count(), game.vm.last_event])
+			if dump_path != "" and not game.busy:
+				var d := GameState.to_save()
+				d["meta"] = {"pos": game.field.party_place()}
+				var f := FileAccess.open(dump_path, FileAccess.WRITE)
+				if f:
+					f.store_string(JSON.stringify(d))
 		if steps == last_steps:
 			var vm := game.vm
 			var op = vm.ops[vm.pc - 1] if vm.running and vm.pc > 0 and vm.pc <= vm.ops.size() else null
@@ -179,7 +189,7 @@ func _targets() -> Array:
 
 
 ## Breadth-first search over leader cells: cell -> [previous cell, direction].
-func _reach() -> Dictionary:
+func _reach(avoid := false) -> Dictionary:
 	var f := game.field
 	var w := f.map_w
 	var start := f.leader_cell()
@@ -209,7 +219,7 @@ func _reach() -> Dictionary:
 				prev[n] = [c, d]
 				# zone cells can be reached but not crossed: walking through
 				# a doorway on the way somewhere else warps the party off
-				if not zone_cells.has(n):
+				if not (avoid and zone_cells.has(n)):
 					queue.append(n)
 	return prev
 
@@ -241,10 +251,12 @@ var debug := false
 
 
 var zone_cells := {}
+var _avoid := false
 
 
 func _go_somewhere() -> bool:
 	zone_cells = _zone_cells()
+	var careful := _reach(true)
 	var reach := _reach()
 	var best = null
 	var best_score := 1 << 30
@@ -265,6 +277,9 @@ func _go_somewhere() -> bool:
 					best_score = score
 					best = [key, g, t[1][g]]
 				break
+	# go round other zones when the goal can be reached that way
+	if best != null:
+		_avoid = careful.has(best[1])
 	if best == null:
 		return false
 	visits[best[0]] = visits.get(best[0], 0) + 1
@@ -285,7 +300,9 @@ func _walk_to(goal: int, face: int) -> bool:
 		await _wander(2)
 		return false
 	for attempt in 4:
-		var prev := _reach()
+		var prev := _reach(_avoid)
+		if not prev.has(goal):
+			prev = _reach()
 		if not prev.has(goal):
 			return false
 		for st in _path(prev, goal):
