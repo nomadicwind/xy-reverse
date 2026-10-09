@@ -68,6 +68,7 @@ func _ready() -> void:
 			await get_tree().process_frame
 			var ex := Explorer.new(game)
 			ex.debug = "--debug" in args
+			game.vm.trace = "--trace" in args
 			var at := -1
 			var resume := ""
 			for b in args:

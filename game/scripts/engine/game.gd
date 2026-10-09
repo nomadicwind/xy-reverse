@@ -372,7 +372,8 @@ var _enc_hits := 0
 
 ## Op 0x1C and friends (RPG 0x2412): FIG.EXE takes over until the battle ends.
 ## A lost battle shows the defeat message and goes back to the title.
-func battle(group: int, _boss: bool) -> void:
+## Returns false when the party lost.
+func battle(group: int, _boss: bool) -> bool:
 	busy = true
 	var old_music: String = _music_path
 	await fade(false)
@@ -385,8 +386,17 @@ func battle(group: int, _boss: bool) -> void:
 	_play_music_file(old_music)
 	if r == Battle.Result.LOSE:
 		defeated.emit()
-		return
+		return false
 	await fade(true)
+	return true
+
+
+## The scene as RPG.EXE reloads it after a battle: objects from their saved
+## records, the party where it stood.
+func reload_scene() -> void:
+	var place := field.party_place()
+	field.load_entry(field.entry_ref, 1)
+	field.restore_place(place)
 
 
 ## RPG 0x2367, once per step on maps with encounters.

@@ -46,8 +46,12 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 	var t_end := Time.get_ticks_msec() + int(seconds * 1000.0)
 	_heartbeat(t_end)
 	var idle := 0
+	var next_dump := 0
 	while Time.get_ticks_msec() < t_end and not lost[0]:
 		_note_scene()
+		if dump_path != "" and Time.get_ticks_msec() >= next_dump:
+			next_dump = Time.get_ticks_msec() + 30000
+			_dump()
 		if god:
 			_top_up()
 		var acted := await _go_somewhere()
@@ -83,12 +87,7 @@ func _heartbeat(t_end: int) -> void:
 		if beat % 12 == 0:
 			print("[explore] status: entry %d map %d, %d steps, %d events, flags %d, last %s" % [
 				game.field.entry_ref, game.field.map_id, steps, events, _flag_count(), game.vm.last_event])
-			if dump_path != "" and not game.busy:
-				var d := GameState.to_save()
-				d["meta"] = {"pos": game.field.party_place()}
-				var f := FileAccess.open(dump_path, FileAccess.WRITE)
-				if f:
-					f.store_string(JSON.stringify(d))
+
 		if steps == last_steps:
 			var vm := game.vm
 			var op = vm.ops[vm.pc - 1] if vm.running and vm.pc > 0 and vm.pc <= vm.ops.size() else null
@@ -141,6 +140,15 @@ func _note_scene() -> void:
 	if not scenes_seen.has(key):
 		scenes_seen[key] = ref
 		print("[explore] map %d (entry %d, %s) after %d steps" % [game.field.map_id, ref, chapter, steps])
+
+
+## The game state between two moves, for --resume.
+func _dump() -> void:
+	var d := GameState.to_save()
+	d["meta"] = {"pos": game.field.party_place()}
+	var f := FileAccess.open(dump_path, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(d))
 
 
 func _top_up() -> void:

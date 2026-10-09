@@ -18,6 +18,7 @@ var ended_by_restart := false
 var trace := false
 var max_ops := 0              # tests: stop an event after this many ops
 var runs := 0                 # events started, for test bots
+var after_battle := -1          # object whose event runs once the script ends
 var last_event := ""          # script:event (object), for test bots
 
 
@@ -59,6 +60,28 @@ func run(name: String, ref: int, object_index: int) -> void:
 			await game.get_tree().process_frame
 	running = false
 	game.overlay.clear()
+	if after_battle >= 0:
+		# RPG.EXE 0x00EA: back from FIG.EXE, the event of object [0x610]
+		var o := after_battle
+		after_battle = -1
+		if o < field.objects.size() and field.objects[o].event != 0:
+			await run(script_name, field.objects[o].event, o)
+
+
+## The battle ops leave RPG.EXE for FIG.EXE (jump to 0x2412), so the script
+## ends with the battle. When RPG.EXE starts again it loads the scene's
+## objects from MAPZ, where op 0x03 may have patched them, and runs the
+## event of object ([0x610] - 2) / 2 if one was given.
+func _battle(group: int, boss: bool, obj_ref: int) -> void:
+	GameState.setw(0x610, obj_ref)
+	var won: bool = await game.battle(group, boss)
+	running = false
+	GameState.setw(0x610, 0)
+	if not won:
+		return
+	game.reload_scene()
+	if obj_ref >= 2:
+		after_battle = (obj_ref - 2) / 2
 
 
 func stop() -> void:
@@ -159,7 +182,7 @@ func _exec(op: int, args: Array) -> void:
 		0x1B:  # 0x6050 set object state
 			field.set_object_state(_a(args, 0) / 2, _a(args, 1))
 		0x1C:  # 0x6064 battle with enemy group n
-			await game.battle(_a(args, 0), false)
+			await _battle(_a(args, 0), false, 0)
 		0x1D:  # 0x6071 load palette and tiles (cut scenes)
 			field.load_tiles(_a(args, 0), _a(args, 1), true)
 		0x1E:  # 0x6088 party walks up n steps
@@ -221,8 +244,7 @@ func _exec(op: int, args: Array) -> void:
 			GameState.setw(GameState.PARTY_COUNT, _a(args, 0))
 			field.refresh_party()
 		0x30:  # 0x6060 battle, then run an object's event
-			GameState.setw(0x610, _a(args, 0))
-			await game.battle(_a(args, 1), false)
+			await _battle(_a(args, 1), false, _a(args, 0))
 		0x31:  # 0x629D shake
 			await game.shake(_a(args, 0))
 		0x32:  # 0x62B1 swap two party records
@@ -249,13 +271,11 @@ func _exec(op: int, args: Array) -> void:
 		0x39:  # 0x6332 sound effect SP<n>.VOC
 			game.play_sfx(_a(args, 0))
 		0x3A:  # 0x6339 boss battle
-			await game.battle(_a(args, 0), true)
+			await _battle(_a(args, 0), true, 0)
 		0x3B:  # 0x6342 boss battle, then an object's event
-			GameState.setw(0x610, _a(args, 0))
-			await game.battle(_a(args, 1), true)
+			await _battle(_a(args, 1), true, _a(args, 0))
 		0x3C:  # 0x634B battle, then an object's event
-			GameState.setw(0x610, _a(args, 0))
-			await game.battle(_a(args, 1), false)
+			await _battle(_a(args, 1), false, _a(args, 0))
 		0x3D:  # 0x6354
 			GameState.setb(0x1CC, 0x96)
 		0x3E:  # 0x635A journal entry (BOOK.ZAQ), then show the text in box
