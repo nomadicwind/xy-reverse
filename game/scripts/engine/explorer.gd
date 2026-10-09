@@ -9,7 +9,8 @@ extends RefCounted
 
 var game: Game
 var god := true
-var visits := {}            # "entry:kind:index" -> times tried
+var visits := {}            # "entry:kind:index|story" -> times tried
+var best_flags := 0
 var scenes_seen := {}
 var chapters_seen := {}
 var steps := 0
@@ -83,7 +84,31 @@ var _last_ref := -1
 var entries_seen := {}
 
 
+## Story state: the flag words DS:596..611 and the events of the scene's
+## objects (scripts hand NPCs new events as the story goes on). Targets are tried afresh after
+## every change, since talking to the same people often moves the story on.
+func _story() -> int:
+	var evs := []
+	for a in game.field.objects:
+		evs.append(a.event)
+	return hash([GameState.ds.slice(GameState.FLAGS, 0x612), evs])
+
+
+func _flag_count() -> int:
+	var n := 0
+	for off in range(GameState.FLAGS, 0x612):
+		var v := GameState.ds[off]
+		while v:
+			n += v & 1
+			v >>= 1
+	return n
+
+
 func _note_scene() -> void:
+	var fc := _flag_count()
+	if fc > best_flags:
+		best_flags = fc
+		print("[explore] flags %d at map %d entry %d after %d steps" % [fc, game.field.map_id, game.field.entry_ref, steps])
 	var ref := game.field.entry_ref
 	entries_seen[ref] = entries_seen.get(ref, 0) + 1
 	if ref != _last_ref:
@@ -194,8 +219,9 @@ func _go_somewhere() -> bool:
 	var reach := _reach()
 	var best = null
 	var best_score := 1 << 30
+	var story := _story()
 	for t in _targets():
-		var key: String = t[0]
+		var key: String = "%s|%d" % [t[0], story]
 		var v: int = visits.get(key, 0)
 		for g in t[1]:
 			if reach.has(g):

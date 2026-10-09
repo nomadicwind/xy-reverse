@@ -266,13 +266,15 @@ def export_rsk(game, out, name):
     if not f.exists():
         return 0
     frames = []
+    d = out / "rsk"
+    d.mkdir(parents=True, exist_ok=True)
     for c in split_offsets16(decompress(f.read_bytes())):
+        if len(c) == 771:  # a palette part (3-byte header), as in DOR4.RSK
+            _palette_png(d / (f.stem + ".pal.png"), b"\0\0" + c[3:771])
         try:
             frames.append(decode_pic(c) if _looks_like_pic(c) else (1, 1, b"\xfe"))
         except (struct.error, IndexError):
             frames.append((1, 1, b"\xfe"))
-    d = out / "rsk"
-    d.mkdir(parents=True, exist_ok=True)
     W, H, px, rects = _atlas(frames)
     _png_l8(d / (f.stem + ".png"), W, H, px)
     (d / (f.stem + ".json")).write_text(json.dumps({"frames": rects}))
@@ -325,6 +327,8 @@ def export_engine(game, out):
         summary[pack] = export_pack(game, out, pack)
     summary["glyphs"] = export_font(game, out)
     summary["menu"] = export_rsk(game, out, "MENU.RSK")
+    # the dragon cart cut-scene of op 0x50 (RPG 0x6AB9)
+    summary["dor"] = [export_rsk(game, out, "DOR%d.RSK" % n) for n in range(1, 5)]
     summary["battle"] = export_battle(game, out)
     # RPG.EXE's initialised data segment is the new-game state (party, money,
     # flags). DS = 0xF29, so it starts at image offset 0xF290.

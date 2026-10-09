@@ -329,8 +329,12 @@ func _exec(op: int, args: Array) -> void:
 					break
 		0x4F:  # 0x6911 redraw the current frame
 			await game.play_frames(0)
-		0x50:  # 0x6941 show DOR1.RSK picture
-			pass
+		0x50:  # 0x6941 the dragon cart cut-scene (DOR1..4.RSK)
+			if not Overlay.auto_continue:
+				var cs := CartScene.new()
+				game.ui_layer.add_child(cs)
+				await cs.play()
+				cs.queue_free()
 		0x51:  # 0x6947 select the animation frame
 			field.anim_frame = _a(args, 0)
 		_:
