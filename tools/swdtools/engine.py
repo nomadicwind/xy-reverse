@@ -19,7 +19,7 @@ import json
 import struct
 from pathlib import Path
 
-from . import scenes, script
+from . import battle, scenes, script
 from .containers import is_compressed_block, lsk_entries, split_offsets16
 from .lzh import decompress
 from .pic import decode_pic
@@ -253,6 +253,23 @@ def export_rsk(game, out, name):
     return len(frames)
 
 
+def export_battle(game, out):
+    """battle.json (FIG/ORC/ITEM tables, see swdtools/battle.py) and the
+    battle backgrounds BA/BAnn.RSK = [picture 320x200, palette]."""
+    data = battle.dump(str(game))
+    (out / "battle.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    d = out / "ba"
+    d.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in sorted(Path(game).glob("BA/BA*.RSK")):
+        parts = split_offsets16(decompress(f.read_bytes()))
+        w, h, px = decode_pic(parts[0])
+        _png_l8(d / (f.stem.upper() + ".png"), w, h, px)
+        _palette_png(d / (f.stem.upper() + ".pal.png"), b"\0\0" + parts[1][3:771])
+        n += 1
+    return {"groups": len(data["groups"]), "backgrounds": n}
+
+
 def export_scripts(game, out):
     d = out / "scripts"
     d.mkdir(parents=True, exist_ok=True)
@@ -282,6 +299,7 @@ def export_engine(game, out):
         summary[pack] = export_pack(game, out, pack)
     summary["glyphs"] = export_font(game, out)
     summary["menu"] = export_rsk(game, out, "MENU.RSK")
+    summary["battle"] = export_battle(game, out)
     # RPG.EXE's initialised data segment is the new-game state (party, money,
     # flags). DS = 0xF29, so it starts at image offset 0xF290.
     rpg = _find(game, "RPG.EXE").read_bytes()

@@ -204,15 +204,13 @@ func warp(action: int) -> void:
 		await warp(int(z[3]))
 
 
-func _maybe_encounter() -> void:
-	pass
-
-
 # ---------------------------------------------------------------- script services
 
 func set_brightness(v: float) -> void:
 	GameState.brightness = v
 	field.set_brightness(v)
+	if battle_scene:
+		battle_scene.set_brightness(v)
 
 
 func fade(to_on: bool) -> void:
@@ -312,16 +310,16 @@ func menu(texts: Array) -> int:
 		await get_tree().process_frame
 		while true:
 			await get_tree().process_frame
-			if Input.is_action_just_pressed("ui_down"):
+			if Keys.just("ui_down"):
 				sel = (sel + 1) % texts.size()
 				break
-			if Input.is_action_just_pressed("ui_up"):
+			if Keys.just("ui_up"):
 				sel = (sel - 1 + texts.size()) % texts.size()
 				break
-			if Input.is_action_just_pressed("ui_accept"):
+			if Keys.just("ui_accept"):
 				overlay.clear_text()
 				return sel
-			if Input.is_action_just_pressed("ui_cancel"):
+			if Keys.just("ui_cancel"):
 				overlay.clear_text()
 				return -1
 	return -1
@@ -340,9 +338,65 @@ func save_prompt() -> void:
 	pass
 
 
-func battle(_group: int, _boss: bool) -> void:
-	# M3: battles. Until then every battle is won at once.
-	pass
+var battle_scene: Battle
+var _steps := 0          # RPG DS:2D33 / 3311 / 3312, not saved
+var _enc_count := 0
+var _enc_hits := 0
+
+
+## Op 0x1C and friends (RPG 0x2412): FIG.EXE takes over until the battle ends.
+## A lost battle shows the defeat message and goes back to the title.
+func battle(group: int, _boss: bool) -> void:
+	busy = true
+	var old_music: String = _music_path
+	await fade(false)
+	battle_scene = Battle.new(self)
+	add_child(battle_scene)
+	var r: int = await battle_scene.run(group)
+	battle_scene = null
+	_sync_palette()
+	field.redraw()
+	_play_music_file(old_music)
+	if r == Battle.Result.LOSE:
+		restart()
+		return
+	await fade(true)
+
+
+## RPG 0x2367, once per step on maps with encounters.
+func _maybe_encounter() -> void:
+	_steps += 1
+	if _steps >= 10:
+		_steps = 0
+		_poison_tick()
+	_enc_count += 1
+	if _enc_count < 0x28:
+		return
+	var r := randi() & 0xFFFF
+	if not (r & 4):
+		return
+	_enc_count = r & 31
+	_enc_hits += 1
+	if _enc_hits < 4:
+		return
+	_enc_count = 0
+	_enc_hits = 0
+	GameState.setw(0x594, 0)
+	await battle(0, false)
+	busy = false
+
+
+## Status 0x200 (poison from enemy attacks) costs 1 HP every 10 steps.
+func _poison_tick() -> void:
+	for m in GameState.w(GameState.PARTY_COUNT):
+		var rec := GameState.PARTY + m * GameState.PARTY_REC
+		var st := GameState.w(rec + 8)
+		if st & 0x2000 or not (st & 0x200):
+			continue
+		var hp := maxi(0, GameState.w(rec + 0x2D) - 1)
+		GameState.setw(rec + 0x2D, hp)
+		if hp == 0:
+			GameState.setw(rec + 8, 0x2000)
 
 
 func add_journal(_text: String) -> void:
@@ -357,8 +411,15 @@ func play_music(n: int) -> void:
 	_play_music_file("RX/RI%03d.RIX" % n)
 
 
-func _play_music_file(_path: String) -> void:
-	pass
+var _music_path := ""
+
+
+func play_music_path(path: String) -> void:
+	_play_music_file(path)
+
+
+func _play_music_file(path: String) -> void:
+	_music_path = path
 
 
 func play_sfx(n: int) -> void:

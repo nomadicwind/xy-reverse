@@ -125,7 +125,8 @@ func scene_of_entry(ref: int) -> Dictionary:
 func to_save() -> Dictionary:
 	var sc := {}
 	for k in scenes:
-		sc[str(k)] = {"objects": scenes[k]["objects"]}
+		var r: Dictionary = scenes[k]
+		sc[str(k)] = {"objects": r.get("objects", []), "map_id": r.get("map_id", 0), "unknown": r.get("unknown", 0)}
 	return {
 		"version": 1,
 		"ds": Marshalls.raw_to_base64(ds),
@@ -140,7 +141,8 @@ func from_save(d: Dictionary) -> void:
 	scenes.clear()
 	for k in d.get("scenes", {}):
 		var s := scene_state(int(k))
-		s["objects"] = d["scenes"][k]["objects"]
+		for f in d["scenes"][k]:
+			s[f] = d["scenes"][k][f]
 	current_entry = int(d.get("entry", 0))
 	if d.has("names"):
 		names = d["names"]
