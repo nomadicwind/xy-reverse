@@ -52,6 +52,9 @@ func start_new_game() -> void:
 	_sync_palette()
 	play_scene_music()
 	set_brightness(0.0)
+	# RPG.EXE 0x0D73: the naming screen comes first
+	if not Overlay.auto_continue:
+		await NameEntry.new(self).run()
 	# RPG.EXE 0x0D83: the new game runs object 1's event at entry 0x2A
 	await run_object_event(1)
 	busy = false

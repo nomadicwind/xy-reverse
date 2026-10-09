@@ -233,7 +233,30 @@ def export_names(game, out, glyphs):
         g = b[2 + 2 * n + 30 * k:2 + 2 * n + 30 * (k + 1)]
         slots.append("" if not any(g) else by_bits.get(g, "?"))
     names = ["".join(slots[i:i + 4]) for i in range(0, len(slots), 4)]
-    (out / "names.json").write_text(json.dumps({"names": names}, ensure_ascii=False))
+    meta = {"names": names}
+    meta.update(_naming_screen(game))
+    (out / "names.json").write_text(json.dumps(meta, ensure_ascii=False))
+
+
+def _naming_screen(game):
+    """Texts of the naming screen (RPG.EXE 0x1820) from the data segment:
+    the prompt at DS:2598, the slot labels at DS:25C6 and three pages of
+    9 x 11 characters at DS:25FE (rows end with ##, pages are 0xD8 bytes)."""
+    rpg = _find(game, "RPG.EXE").read_bytes()
+    ds = struct.unpack_from("<H", rpg, 8)[0] * 16 + 0xF290
+
+    def text(off):
+        end = rpg.index(b"$$", ds + off)
+        return rpg[ds + off:end].decode("big5", "replace")
+
+    pages = []
+    for p in range(3):
+        rows = []
+        for r in range(9):
+            a = ds + 0x25FE + p * 0xD8 + r * 24
+            rows.append(rpg[a:a + 22].decode("big5", "replace"))
+        pages.append(rows)
+    return {"prompt": text(0x2598), "slots": text(0x25C6), "grid": pages}
 
 
 def export_rsk(game, out, name):
