@@ -49,6 +49,12 @@ func _ready() -> void:
 			await VmTest.run_battles(game)
 			get_tree().quit()
 			return
+		elif a.begins_with("--stress="):
+			_start_game()
+			await get_tree().process_frame
+			await VmTest.run_stress(game, int(a.substr(9)))
+			get_tree().quit()
+			return
 		elif a == "--creaturetest":
 			_start_game()
 			game.field.load_entry(8)

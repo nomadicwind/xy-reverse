@@ -28,7 +28,10 @@ func run(seconds: float, start_entry := -1) -> void:
 	Engine.time_scale = 64.0
 	game.bot = true
 	game.vm.max_ops = 20000
-	game.defeated.connect(func(): print("[explore] party defeated"))
+	var lost := [false]
+	game.defeated.connect(func():
+		print("[explore] party defeated")
+		lost[0] = true)
 	if start_entry >= 0:
 		GameState.new_game()
 		game.field.load_entry(start_entry)
@@ -39,7 +42,7 @@ func run(seconds: float, start_entry := -1) -> void:
 	var t_end := Time.get_ticks_msec() + int(seconds * 1000.0)
 	_heartbeat(t_end)
 	var idle := 0
-	while Time.get_ticks_msec() < t_end:
+	while Time.get_ticks_msec() < t_end and not lost[0]:
 		_note_scene()
 		if god:
 			_top_up()
@@ -171,7 +174,7 @@ func _targets() -> Array:
 		for r in range(a / w, b / w + 1):
 			for c in range(a % w, b % w + 1):
 				goals[r * w + c] = -1
-		out.append([key, goals])
+		out.append([key, goals, act & 0xFFF])
 	return out
 
 
@@ -204,8 +207,25 @@ func _reach() -> Dictionary:
 					ok = c % w < w - 1 and f._free(n)
 			if ok and not prev.has(n):
 				prev[n] = [c, d]
-				queue.append(n)
+				# zone cells can be reached but not crossed: walking through
+				# a doorway on the way somewhere else warps the party off
+				if not zone_cells.has(n):
+					queue.append(n)
 	return prev
+
+
+## Every cell of the scene's trigger zones.
+func _zone_cells() -> Dictionary:
+	var f := game.field
+	var w := f.map_w
+	var out := {}
+	for z in f.zones:
+		var a := f.pos_to_cell(int(z[1]))
+		var b := f.pos_to_cell(int(z[2]))
+		for r in range(a / w, b / w + 1):
+			for c in range(a % w, b % w + 1):
+				out[r * w + c] = true
+	return out
 
 
 func _path(prev: Dictionary, goal: int) -> Array:
@@ -220,7 +240,11 @@ func _path(prev: Dictionary, goal: int) -> Array:
 var debug := false
 
 
+var zone_cells := {}
+
+
 func _go_somewhere() -> bool:
+	zone_cells = _zone_cells()
 	var reach := _reach()
 	var best = null
 	var best_score := 1 << 30
@@ -228,9 +252,15 @@ func _go_somewhere() -> bool:
 	for t in _targets():
 		var key: String = "%s|%d" % [t[0], story]
 		var v: int = visits.get(key, 0)
+		# Some scenes reset flags on entry, so the story key alone can keep
+		# every target fresh; how often a target or a destination was used
+		# in any story breaks those loops.
+		var worn: int = visits.get(t[0], 0) * 20
+		if t.size() > 2:
+			worn += int(entries_seen.get(t[2], 0)) / 4
 		for g in t[1]:
 			if reach.has(g):
-				var score := v * 1000 + randi() % 50 - (500 if key.begins_with("new:") else 0)
+				var score := v * 1000 + worn + randi() % 50 - (500 if key.begins_with("new:") else 0)
 				if score < best_score:
 					best_score = score
 					best = [key, g, t[1][g]]
@@ -238,6 +268,8 @@ func _go_somewhere() -> bool:
 	if best == null:
 		return false
 	visits[best[0]] = visits.get(best[0], 0) + 1
+	var base_key: String = best[0].get_slice("|", 0)
+	visits[base_key] = visits.get(base_key, 0) + 1
 	var r := await _walk_to(best[1], best[2])
 	if debug:
 		var f := game.field
@@ -248,6 +280,10 @@ func _go_somewhere() -> bool:
 ## Walk until the leader stands on cell, re-planning when pushed off the
 ## path. Stops early when an event or a warp takes over.
 func _walk_to(goal: int, face: int) -> bool:
+	if face < 0 and game.field.leader_cell() == goal:
+		# already standing in the zone: step out so the next try walks in
+		await _wander(2)
+		return false
 	for attempt in 4:
 		var prev := _reach()
 		if not prev.has(goal):

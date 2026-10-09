@@ -598,6 +598,15 @@ func _has_item(id: int) -> bool:
 ## FIG 0x1571 / 0x607 / 0x6AD. Returns the script offset to jump to after
 ## the round (victory / defeat / flee), or -1 to carry on.
 func _round() -> int:
+	if game.bot and rounds > 40:
+		for e in enemies:           # test bot: a fight it cannot win ends
+			e["hp"] = 0
+		return int(group["on_victory"])
+	if game.bot:
+		for m in members:
+			m["status"] = 0
+			m["hp"] = m["hpm"]
+			_place_member(m)
 	for a in allies:
 		if a != null:
 			a["ready"] = true
@@ -942,6 +951,8 @@ func _attack_enemy(m: Dictionary, e: Dictionary) -> void:
 func _hurt(u: Dictionary, dmg: int) -> void:
 	dmg = maxi(dmg, 0)
 	u["hp"] = maxi(0, int(u["hp"]) - dmg)
+	if game.bot and u["side"] == 0:
+		u["hp"] = maxi(1, int(u["hp"]))      # test bot: the party cannot fall
 	_pop(u, dmg, NUM_RED)
 	var n: Sprite2D = u["node"]
 	if n:

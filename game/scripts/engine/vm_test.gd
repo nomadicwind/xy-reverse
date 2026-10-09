@@ -114,3 +114,19 @@ static func run_creatures(game: Game) -> void:
 	print("[creaturetest] result=%d rounds=%d captured=%d ally=%s sta=%d silkworm=%d back=%d money=%d" % [
 		r, b.rounds, seen.get("captured", 0), seen.get("ally", false), seen.get("sta", -1),
 		GameState.w(0x645 + 2 * (0xEC - 0xE6)), back, b.money_total])
+
+
+## Loads entry points over and over, to catch crashes that build up over a
+## long session (the vmtest of a whole chapter used to die near event 450).
+static func run_stress(game: Game, n: int) -> void:
+	var refs := []
+	var es: Array = Assets.mapa["entries"]
+	for i in es.size():
+		if es[i] != null:
+			refs.append(2 * i + 2)
+	for k in n:
+		game.field.load_entry(refs[k % refs.size()])
+		await game.get_tree().process_frame
+		if k % 100 == 0:
+			print("[stress] %d loads, %d nodes, static %d KB" % [k, game.get_tree().get_node_count(), OS.get_static_memory_usage() / 1024])
+	print("[stress] done, %d loads" % n)
