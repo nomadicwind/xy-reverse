@@ -26,6 +26,7 @@ const SHADER := preload("res://scripts/engine/indexed.gdshader")
 var entry_ref := 0
 var entry: Dictionary
 var scene: Dictionary          # live copy of the scene record
+var path_bytes := PackedInt32Array()   # scene path bytes as ints
 var map_id := 0
 var encounters := false
 
@@ -82,6 +83,10 @@ func load_entry(ref: int, mode := 0) -> bool:
 	entry = e
 	var sc = GameState.scene_state(int(e["scene"]))
 	scene = sc
+	var pb := PackedInt32Array()
+	for v in sc.get("paths", []):
+		pb.append(int(v))
+	path_bytes = pb
 	map_id = int(sc["map_id"])
 	encounters = int(sc["unknown"]) != 0
 	GameState.current_entry = ref
@@ -575,7 +580,7 @@ func _wander(a: Actor) -> void:
 
 
 func _run_path(a: Actor) -> void:
-	var paths: Array = scene.get("paths", [])
+	var paths := path_bytes
 	if paths.is_empty():
 		a.path = 0
 		return
@@ -634,7 +639,7 @@ func _path_move(a: Actor, stepv: int, dir: int, pc: int) -> void:
 	a.frame_dir = dir
 	a.base_frame = 0 if a.sprite != 0 else a.base_frame
 	a.pos = cell_to_pos(c)
-	var paths: Array = scene["paths"]
+	var paths := path_bytes
 	if pc + 1 < paths.size() and paths[pc + 1] == 0xFE:
 		a.anim = 0
 		a.frame_dir = 0

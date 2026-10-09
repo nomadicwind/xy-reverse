@@ -20,6 +20,10 @@ var scenes := {}
 var current_entry := 0
 var current_scene := 0
 var brightness := 1.0
+## The four player characters' names (NAME.DAQ). Scripts write them as the
+## placeholder codes in NAME_CODES, four slots per name, right-aligned.
+var names: Array = []
+const NAME_CODES := "ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏㄐㄑㄒㄔㄕ"
 
 
 func _ready() -> void:
@@ -31,6 +35,32 @@ func new_game() -> void:
 	if ds.size() < 0x8000:
 		ds.resize(0x8000)
 	scenes.clear()
+	var nj = Assets.load_json("names.json") if Assets.available() else null
+	names = nj["names"].duplicate() if nj is Dictionary else ["", "", "", ""]
+
+
+## Replaces the name placeholders in script text with the current names.
+func expand_names(text: String) -> String:
+	if not _has_name_code(text):
+		return text
+	var out := ""
+	for c in text:
+		var k := NAME_CODES.find(c)
+		if k < 0:
+			out += c
+			continue
+		var nm: String = names[k / 4] if k / 4 < names.size() else ""
+		var slot := k % 4 - (4 - nm.length())
+		if slot >= 0 and slot < nm.length():
+			out += nm[slot]
+	return out
+
+
+func _has_name_code(text: String) -> bool:
+	for c in NAME_CODES:
+		if text.find(c) >= 0:
+			return true
+	return false
 
 
 func w(off: int) -> int:
@@ -101,6 +131,7 @@ func to_save() -> Dictionary:
 		"ds": Marshalls.raw_to_base64(ds),
 		"entry": current_entry,
 		"scenes": sc,
+		"names": names,
 	}
 
 
@@ -111,3 +142,5 @@ func from_save(d: Dictionary) -> void:
 		var s := scene_state(int(k))
 		s["objects"] = d["scenes"][k]["objects"]
 	current_entry = int(d.get("entry", 0))
+	if d.has("names"):
+		names = d["names"]

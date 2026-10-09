@@ -26,6 +26,8 @@ static var auto_continue := false   # tests: never wait for keys
 func set_palette(img: Image, tex: Texture2D) -> void:
 	palette_img = img
 	palette_tex = tex
+	if _box_node and _box_node.material:
+		(_box_node.material as ShaderMaterial).set_shader_parameter("palette", tex)
 	queue_redraw()
 
 
@@ -38,6 +40,7 @@ func pal_color(i: int) -> Color:
 func clear() -> void:
 	items.clear()
 	box = Rect2()
+	_build_box()
 	waiting_icon = Vector2(-1, -1)
 	queue_redraw()
 
@@ -54,9 +57,55 @@ func add_picture(tex: Texture2D, region: Rect2, at: Vector2) -> void:
 	queue_redraw()
 
 
+## The dialogue frame of RPG.EXE 0x8636/0x2C3B: a 9-slice of MENU.RSK
+## pictures 0x53..0x5B, 9 columns of 32 px and 4 middle rows of 16 px.
 func show_box(top: bool) -> void:
-	box = Rect2(16, 0 if top else 112, 288, 80)
+	box = Rect2(16, 0 if top else 112, 288, 88)
 	clear_text()
+	_build_box()
+
+
+var _box_node: Node2D
+
+
+func _build_box() -> void:
+	if _box_node == null:
+		_box_node = Node2D.new()
+		_box_node.show_behind_parent = true
+		add_child(_box_node)
+		move_child(_box_node, 0)
+	for c in _box_node.get_children():
+		c.queue_free()
+	var menu = Assets.rsk("MENU")
+	if box.size == Vector2.ZERO or menu == null:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = SHADER
+	mat.set_shader_parameter("transparent_index", 0xFE)
+	mat.set_shader_parameter("palette", palette_tex)
+	_box_node.material = mat
+	for col in 9:
+		var base := 0x53 if col == 0 else (0x59 if col == 8 else 0x56)
+		var x := box.position.x + col * 32
+		var y := box.position.y
+		_box_piece(menu, base, Vector2(x, y), mat)
+		y += 12
+		for r in 4:
+			_box_piece(menu, base + 1, Vector2(x, y), mat)
+			y += 16
+		_box_piece(menu, base + 2, Vector2(x, y), mat)
+
+
+func _box_piece(menu: Dictionary, frame: int, at: Vector2, mat: Material) -> void:
+	var r: Array = menu["frames"][frame]
+	var s := Sprite2D.new()
+	s.centered = false
+	s.texture = menu["texture"]
+	s.region_enabled = true
+	s.region_rect = Rect2(r[0], r[1], r[2], r[3])
+	s.position = at
+	s.material = mat
+	_box_node.add_child(s)
 
 
 ## Splits script text into draw tokens.
@@ -90,7 +139,7 @@ func write(text: String, x: int, y: int, typewriter: bool, wrap_x := 280, lines_
 	var cy := y
 	var line_count := lines_per_page
 	skip = false
-	for tok in tokenize(text):
+	for tok in tokenize(GameState.expand_names(text)):
 		match tok["t"]:
 			"C":
 				color_text = tok["v"]
@@ -126,7 +175,7 @@ func write(text: String, x: int, y: int, typewriter: bool, wrap_x := 280, lines_
 						"c": color_text, "m": color_shadow})
 				queue_redraw()
 				cx += 16
-				if cx >= wrap_x + 16:
+				if cx >= wrap_x:  # RPG.EXE 0x828F: new line at x = 280
 					cx = start_x
 					cy += LINE
 				if typewriter and not skip and not fast:
@@ -163,9 +212,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	if box.size != Vector2.ZERO:
+	if box.size != Vector2.ZERO and Assets.rsk("MENU") == null:
 		draw_rect(box, Color(0, 0, 0, 0.55))
-		draw_rect(box, pal_color(color_text).darkened(0.3), false, 1.0)
 	var font := Assets.font_texture
 	for it in items:
 		match it["kind"]:

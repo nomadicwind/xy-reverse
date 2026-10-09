@@ -80,15 +80,27 @@ func _on_event_requested(i: int) -> void:
 		run_object_event(i)
 
 
+var _accept := false
+var _accept_was_down := false
+
+
 func _process(delta: float) -> void:
+	# latch the action key: the field only ticks every few frames
+	var down := Input.is_action_pressed("ui_accept")
+	if down and not _accept_was_down:
+		_accept = true
+	_accept_was_down = down
 	if busy or not Assets.available() or field.cells.is_empty():
+		_accept = false
 		return
 	_acc += delta
 	var frame := maxf(1.0, float(GameState.w(0x64F9))) * TICK
 	if _acc < frame:
 		return
 	_acc = 0.0
-	_field_tick()
+	var acc := _accept
+	_accept = false
+	_field_tick(acc)
 
 
 func _input_dir() -> int:
@@ -103,7 +115,7 @@ func _input_dir() -> int:
 	return -1
 
 
-func _field_tick() -> void:
+func _field_tick(accept: bool) -> void:
 	# pending event after a battle (0x610)
 	var pend := GameState.w(0x610)
 	if pend != 0:
@@ -112,7 +124,7 @@ func _field_tick() -> void:
 		return
 	var z = field.zone_at_leader()
 	if z != null:
-		if await _zone(z):
+		if await _zone(z, accept):
 			return
 	var d := _input_dir()
 	if d >= 0:
@@ -122,7 +134,7 @@ func _field_tick() -> void:
 				return
 		if field.encounters:
 			await _maybe_encounter()
-	if Input.is_action_just_pressed("ui_accept"):
+	if accept:
 		var o := field.facing_object()
 		if o >= 0:
 			field.objects[o].frame_dir = _face_towards(field.facing)
@@ -154,14 +166,14 @@ func _touch(i: int) -> bool:
 
 
 ## Trigger zones (RPG.EXE 0x1132).
-func _zone(z: Array) -> bool:
+func _zone(z: Array, accept: bool) -> bool:
 	var action := int(z[3])
 	if action & 0x4000:
 		var i := (action & 0xBFFF) / 2
 		if i < 0x100 and i < field.objects.size():
 			# RPG.EXE 0x11EF: state 8 = switched off, 9 = needs the action key
 			var st := field.objects[i].state
-			if st != 8 and (st != 9 or Input.is_action_just_pressed("ui_accept")):
+			if st != 8 and (st != 9 or accept):
 				await run_object_event(i)
 				return true
 		return false
@@ -288,6 +300,8 @@ func choose_yes_no() -> bool:
 ## A vertical list of choices; returns the index or -1 when cancelled.
 func menu(texts: Array) -> int:
 	var sel := 0
+	if Overlay.auto_continue:
+		return randi() % texts.size()
 	while true:
 		overlay.clear_text()
 		var y := 20

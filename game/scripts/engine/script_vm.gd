@@ -16,6 +16,7 @@ var obj := -1                 # object whose event is running ([0x3C6C] / 2)
 var running := false
 var ended_by_restart := false
 var trace := false
+var max_ops := 0              # tests: stop an event after this many ops
 
 
 func _init(g) -> void:
@@ -48,6 +49,8 @@ func run(name: String, ref: int, object_index: int) -> void:
 			print("[vm] %s %04x %s %s" % [script_name, int(op["at"]), op["name"], op["args"]])
 		await _exec(int(op["op"]), op["args"])
 		guard += 1
+		if max_ops > 0 and guard >= max_ops:
+			break
 		if guard % 200 == 0:
 			await game.get_tree().process_frame
 	running = false

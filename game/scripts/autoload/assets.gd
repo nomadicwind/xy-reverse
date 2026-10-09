@@ -117,6 +117,20 @@ func pictures(file_id: int, entry: int):
 	return r
 
 
+## A picture list exported from an RSK file (rsk/<name>.png/.json).
+func rsk(name: String):
+	var key := "rsk:" + name
+	if _json.has(key):
+		return _json[key]
+	var meta = load_json("rsk/%s.json" % name)
+	var tex := load_texture("rsk/%s.png" % name)
+	var r = null
+	if meta != null and tex != null:
+		r = {"texture": tex, "frames": meta["frames"]}
+	_json[key] = r
+	return r
+
+
 func script_file(name: String):
 	return load_json("scripts/%s.json" % name.get_basename().to_upper())
 

@@ -209,7 +209,48 @@ def export_font(game, out):
     im.save(out / "font.png", optimize=True)
     (out / "font.json").write_text(json.dumps({"cell": 16, "columns": cols, "chars": "".join(chars)},
                                               ensure_ascii=False))
+    export_names(game, out, glyphs)
     return len(chars)
+
+
+def export_names(game, out, glyphs):
+    """SAVE/NAME.DAQ is a 16-glyph font in the DSK layout. Scripts write the
+    four player characters' names as the codes ㄅㄆㄇㄈ ㄉㄊㄋㄌ ㄍㄎㄏㄐ ㄑㄒㄔㄕ
+    and RPG.EXE draws whatever glyphs the naming screen put there; names are
+    right-aligned, blank glyphs pad the left. Match the default glyphs back to
+    characters so the remake can keep names as text."""
+    f = Path(game) / "SAVE" / "NAME.DAQ"
+    if not f.exists():
+        return
+    b = f.read_bytes()
+    n = struct.unpack_from("<H", b, 0)[0]
+    by_bits = {g: ch for ch, g in glyphs.items()}
+    slots = []
+    for k in range(n):
+        g = b[2 + 2 * n + 30 * k:2 + 2 * n + 30 * (k + 1)]
+        slots.append("" if not any(g) else by_bits.get(g, "?"))
+    names = ["".join(slots[i:i + 4]) for i in range(0, len(slots), 4)]
+    (out / "names.json").write_text(json.dumps({"names": names}, ensure_ascii=False))
+
+
+def export_rsk(game, out, name):
+    """A picture list in an RSK file (MENU.RSK holds the dialogue box frame,
+    menu cursors and icons), as an L8 atlas plus frame rects."""
+    f = Path(game) / name
+    if not f.exists():
+        return 0
+    frames = []
+    for c in split_offsets16(decompress(f.read_bytes())):
+        try:
+            frames.append(decode_pic(c) if _looks_like_pic(c) else (1, 1, b"\xfe"))
+        except (struct.error, IndexError):
+            frames.append((1, 1, b"\xfe"))
+    d = out / "rsk"
+    d.mkdir(parents=True, exist_ok=True)
+    W, H, px, rects = _atlas(frames)
+    _png_l8(d / (f.stem + ".png"), W, H, px)
+    (d / (f.stem + ".json")).write_text(json.dumps({"frames": rects}))
+    return len(frames)
 
 
 def export_scripts(game, out):
@@ -240,6 +281,7 @@ def export_engine(game, out):
     for pack in PACKS:
         summary[pack] = export_pack(game, out, pack)
     summary["glyphs"] = export_font(game, out)
+    summary["menu"] = export_rsk(game, out, "MENU.RSK")
     # RPG.EXE's initialised data segment is the new-game state (party, money,
     # flags). DS = 0xF29, so it starts at image offset 0xF290.
     rpg = _find(game, "RPG.EXE").read_bytes()

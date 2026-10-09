@@ -5,6 +5,7 @@ extends Node
 ##   --newgame             skip the title and start a new game
 ##   --entry=<n>           start at entry point n (decimal or 0x..)
 ##   --autoplay=<file>     run an input script (see scripts/autoplay.gd)
+##   --vmtest=<CHNAn|all>  run every script event once and report problems
 
 var game: Game
 
@@ -27,6 +28,12 @@ func _ready() -> void:
 			newgame = true
 		elif a.begins_with("--autoplay="):
 			auto = a.substr(11)
+		elif a.begins_with("--vmtest="):
+			_start_game()
+			await get_tree().process_frame
+			await VmTest.run_all(game, a.substr(9))
+			get_tree().quit()
+			return
 	if auto != "":
 		var ap := Autoplay.new()
 		add_child(ap)
