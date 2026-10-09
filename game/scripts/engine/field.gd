@@ -108,6 +108,21 @@ func load_entry(ref: int, mode := 0) -> bool:
 	return true
 
 
+## Where the party stands, for save files.
+func party_place() -> Dictionary:
+	return {"view_x": view_x, "view_y": view_y, "x": px[0], "y": py[0], "facing": facing}
+
+
+func restore_place(p: Dictionary) -> void:
+	if p.is_empty():
+		return
+	view_x = clampi(int(p["view_x"]), 0, maxi(0, map_w - 40))
+	view_y = clampi(int(p["view_y"]), 0, maxi(0, map_h - 25))
+	_place_party(int(p["x"]), int(p["y"]), int(p["facing"]))
+	_mark_party()
+	redraw()
+
+
 func _set_view_from_offset(off: int) -> void:
 	var c := (off - base) / 2
 	view_x = c % map_w

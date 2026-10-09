@@ -7,10 +7,11 @@ import json
 import os
 import shutil
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
-from . import audio, engine, maps
+from . import audio, engine, maps, rix
 from .containers import is_compressed_block, lsk_entries, split_offsets16
 from .lzh import decompress
 from .pic import decode_pic, to_rgba, vga_palette
@@ -126,8 +127,26 @@ def extract_audio(game, out):
     for f in sorted(Path(game).rglob("*.VOC")):
         audio.voc_to_wav(f.read_bytes(), sfx / (f.stem + ".wav"))
         n += 1
+    ffmpeg = shutil.which("ffmpeg")
+    rendered = 0
     for f in sorted(Path(game).rglob("*.RIX")):
         shutil.copyfile(f, music / f.name)
+        # RIX is AdLib music; render it once so the game can play it anywhere
+        stem = music / f.stem.upper()
+        if stem.with_suffix(".ogg").exists() or stem.with_suffix(".wav").exists():
+            rendered += 1
+            continue
+        wav = stem.with_suffix(".wav")
+        if rix.render(f.read_bytes(), wav, rate=22050) is None:
+            break
+        if ffmpeg:
+            r = subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-i", str(wav),
+                                "-c:a", "libvorbis", "-q:a", "4", str(stem.with_suffix(".ogg"))])
+            if r.returncode == 0:
+                wav.unlink()
+        rendered += 1
+    if rendered == 0:
+        print("music: install PyOPL (pip install PyOPL) to render the RIX songs")
     return n
 
 

@@ -40,6 +40,7 @@ func pal_color(i: int) -> Color:
 func clear() -> void:
 	items.clear()
 	box = Rect2()
+	frames = []
 	_build_box()
 	waiting_icon = Vector2(-1, -1)
 	queue_redraw()
@@ -61,10 +62,31 @@ func add_picture(tex: Texture2D, region: Rect2, at: Vector2) -> void:
 ## pictures 0x53..0x5B, 9 columns of 32 px and 4 middle rows of 16 px.
 func show_box(top: bool) -> void:
 	box = Rect2(16, 0 if top else 112, 288, 88)
+	frames = [box]
 	clear_text()
 	_build_box()
 
 
+## Adds a frame of `cols` x `rows` (32 x 16 px cells, plus the 12 px top and
+## bottom edges), the way menus stack windows. Returns its rectangle.
+func add_frame(at: Vector2, cols: int, rows: int) -> Rect2:
+	var r := Rect2(at, Vector2(32 * maxi(cols, 2), 24 + 16 * maxi(rows, 1)))
+	frames.append(r)
+	_build_box()
+	return r
+
+
+## Removes frames added after the first `keep`, with their text.
+func pop_frames(keep: int) -> void:
+	while frames.size() > keep:
+		var r: Rect2 = frames.pop_back()
+		items = items.filter(func(it): return it["kind"] != "glyph" or not r.has_point(it["at"]))
+	box = frames[0] if not frames.is_empty() else Rect2()
+	_build_box()
+	queue_redraw()
+
+
+var frames: Array = []
 var _box_node: Node2D
 
 
@@ -77,23 +99,27 @@ func _build_box() -> void:
 	for c in _box_node.get_children():
 		c.queue_free()
 	var menu = Assets.rsk("MENU")
-	if box.size == Vector2.ZERO or menu == null:
+	if frames.is_empty() or menu == null:
 		return
 	var mat := ShaderMaterial.new()
 	mat.shader = SHADER
 	mat.set_shader_parameter("transparent_index", 0xFE)
 	mat.set_shader_parameter("palette", palette_tex)
 	_box_node.material = mat
-	for col in 9:
-		var base := 0x53 if col == 0 else (0x59 if col == 8 else 0x56)
-		var x := box.position.x + col * 32
-		var y := box.position.y
-		_box_piece(menu, base, Vector2(x, y), mat)
-		y += 12
-		for r in 4:
-			_box_piece(menu, base + 1, Vector2(x, y), mat)
-			y += 16
-		_box_piece(menu, base + 2, Vector2(x, y), mat)
+	for f in frames:
+		var r: Rect2 = f
+		var cols := int(r.size.x) / 32
+		var rows := (int(r.size.y) - 24) / 16
+		for col in cols:
+			var base := 0x53 if col == 0 else (0x59 if col == cols - 1 else 0x56)
+			var x := r.position.x + col * 32
+			var y := r.position.y
+			_box_piece(menu, base, Vector2(x, y), mat)
+			y += 12
+			for k in rows:
+				_box_piece(menu, base + 1, Vector2(x, y), mat)
+				y += 16
+			_box_piece(menu, base + 2, Vector2(x, y), mat)
 
 
 func _box_piece(menu: Dictionary, frame: int, at: Vector2, mat: Material) -> void:

@@ -4,6 +4,7 @@ extends Node2D
 ## update objects, check trigger zones, draw. Script events pause the loop.
 
 signal finished
+signal defeated
 
 const TICK := 1.0 / 18.2
 
@@ -48,6 +49,7 @@ func start_new_game() -> void:
 	busy = true
 	field.load_entry(0x2A)
 	_sync_palette()
+	play_scene_music()
 	set_brightness(0.0)
 	# RPG.EXE 0x0D83: the new game runs object 1's event at entry 0x2A
 	await run_object_event(1)
@@ -57,8 +59,10 @@ func start_new_game() -> void:
 func load_saved(d: Dictionary) -> void:
 	GameState.from_save(d)
 	field.load_entry(GameState.current_entry)
+	field.restore_place(d.get("meta", {}).get("pos", {}))
 	_sync_palette()
 	set_brightness(1.0)
+	play_scene_music()
 
 
 func run_object_event(i: int) -> void:
@@ -82,6 +86,8 @@ func _on_event_requested(i: int) -> void:
 
 var _accept := false
 var _accept_was_down := false
+var _cancel := false
+var _cancel_was_down := false
 
 
 func _process(delta: float) -> void:
@@ -90,8 +96,13 @@ func _process(delta: float) -> void:
 	if down and not _accept_was_down:
 		_accept = true
 	_accept_was_down = down
+	var cdown := Input.is_action_pressed("ui_cancel")
+	if cdown and not _cancel_was_down:
+		_cancel = true
+	_cancel_was_down = cdown
 	if busy or not Assets.available() or field.cells.is_empty():
 		_accept = false
+		_cancel = false
 		return
 	_acc += delta
 	var frame := maxf(1.0, float(GameState.w(0x64F9))) * TICK
@@ -134,6 +145,10 @@ func _field_tick(accept: bool) -> void:
 				return
 		if field.encounters:
 			await _maybe_encounter()
+	if _cancel:
+		_cancel = false
+		await open_menu()
+		return
 	if accept:
 		var o := field.facing_object()
 		if o >= 0:
@@ -193,12 +208,10 @@ func warp(action: int) -> void:
 	if action & 0x1000:
 		mode = 3 if (action & 0x8000) else 2
 	var ref := action & 0xFFF
-	var old_music: String = field.scene.get("music", "")
 	field.load_entry(ref, mode)
 	_sync_palette()
 	set_brightness(1.0)
-	if field.scene.get("music", "") != old_music:
-		_play_music_file(field.scene.get("music", ""))
+	play_scene_music()
 	var z = field.zone_at_leader()
 	if z != null and not (int(z[3]) & 0x4000):
 		await warp(int(z[3]))
@@ -325,17 +338,24 @@ func menu(texts: Array) -> int:
 	return -1
 
 
-func shop(_items: Array, _sell: bool) -> void:
-	# M4: shop screens. For now buying is skipped.
-	pass
+func shop(items: Array, sell: bool) -> void:
+	await FieldMenu.new(self).shop(items, sell)
 
 
 func storage() -> void:
-	pass
+	await FieldMenu.new(self).storage()
 
 
 func save_prompt() -> void:
-	pass
+	await FieldMenu.new(self).save_prompt()
+
+
+## The main menu (Esc on the field).
+func open_menu() -> void:
+	busy = true
+	await FieldMenu.new(self).open()
+	field.redraw()
+	busy = false
 
 
 var battle_scene: Battle
@@ -358,7 +378,7 @@ func battle(group: int, _boss: bool) -> void:
 	field.redraw()
 	_play_music_file(old_music)
 	if r == Battle.Result.LOSE:
-		restart()
+		defeated.emit()
 		return
 	await fade(true)
 
@@ -399,8 +419,9 @@ func _poison_tick() -> void:
 			GameState.setw(rec + 8, 0x2000)
 
 
-func add_journal(_text: String) -> void:
-	pass
+func add_journal(text: String) -> void:
+	if GameState.journal.is_empty() or GameState.journal[-1] != text:
+		GameState.journal.append(text)
 
 
 func restart() -> void:
@@ -418,8 +439,41 @@ func play_music_path(path: String) -> void:
 	_play_music_file(path)
 
 
+## Songs are rendered from RX/*.RIX by the extractor (music/<NAME>.ogg or
+## .wav) and loop like the original.
 func _play_music_file(path: String) -> void:
+	if path == _music_path and music.playing:
+		return
 	_music_path = path
+	music.stop()
+	if path == "":
+		return
+	var stem := path.get_file().get_basename().to_upper()
+	var base := Assets.root.path_join("music/" + stem)
+	var st: AudioStream = null
+	if FileAccess.file_exists(base + ".ogg"):
+		var ogg := AudioStreamOggVorbis.load_from_buffer(FileAccess.get_file_as_bytes(base + ".ogg"))
+		if ogg:
+			ogg.loop = true
+			st = ogg
+	elif FileAccess.file_exists(base + ".wav"):
+		var bytes := FileAccess.get_file_as_bytes(base + ".wav")
+		if bytes.size() > 44:
+			var wav := AudioStreamWAV.new()
+			wav.format = AudioStreamWAV.FORMAT_16_BITS
+			wav.mix_rate = bytes.decode_u32(24)
+			wav.data = bytes.slice(44)
+			wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+			wav.loop_end = (bytes.size() - 44) / 2
+			st = wav
+	if st:
+		music.stream = st
+		music.volume_db = -6.0
+		music.play()
+
+
+func play_scene_music() -> void:
+	_play_music_file(field.scene.get("music", ""))
 
 
 func play_sfx(n: int) -> void:

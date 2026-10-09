@@ -23,6 +23,7 @@ var brightness := 1.0
 ## The four player characters' names (NAME.DAQ). Scripts write them as the
 ## placeholder codes in NAME_CODES, four slots per name, right-aligned.
 var names: Array = []
+var journal: Array = []        # 記載 pages (op 0x3E, BOOK.ZAQ in the original)
 const NAME_CODES := "ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏㄐㄑㄒㄔㄕ"
 
 
@@ -35,6 +36,7 @@ func new_game() -> void:
 	if ds.size() < 0x8000:
 		ds.resize(0x8000)
 	scenes.clear()
+	journal = []
 	var nj = Assets.load_json("names.json") if Assets.available() else null
 	names = nj["names"].duplicate() if nj is Dictionary else ["", "", "", ""]
 
@@ -133,6 +135,7 @@ func to_save() -> Dictionary:
 		"entry": current_entry,
 		"scenes": sc,
 		"names": names,
+		"journal": journal,
 	}
 
 
@@ -146,3 +149,4 @@ func from_save(d: Dictionary) -> void:
 	current_entry = int(d.get("entry", 0))
 	if d.has("names"):
 		names = d["names"]
+	journal = d.get("journal", [])

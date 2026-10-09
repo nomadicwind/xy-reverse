@@ -226,7 +226,7 @@ func _write_back() -> void:
 
 # ---------------------------------------------------------------- enemies
 
-func _monster(id: int):
+func _monster(id: int) -> Variant:
 	var ms: Array = data["monsters"]
 	var i := id - 314
 	return ms[i] if i >= 0 and i < ms.size() else null
@@ -726,7 +726,7 @@ func _pick_target(side: Array):
 	return null
 
 
-func _skill(id: int):
+func _skill(id: int) -> Variant:
 	var ss: Array = data["skills"]
 	return ss[id] if id >= 0 and id < ss.size() else null
 

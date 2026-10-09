@@ -7,10 +7,12 @@ static func path(slot: int) -> String:
 	return "user://saves/slot%d.json" % slot
 
 
-static func save_slot(slot: int) -> void:
+static func save_slot(slot: int, meta := {}) -> void:
 	DirAccess.make_dir_recursive_absolute("user://saves")
+	var d := GameState.to_save()
+	d["meta"] = meta
 	var f := FileAccess.open(path(slot), FileAccess.WRITE)
-	f.store_string(JSON.stringify(GameState.to_save()))
+	f.store_string(JSON.stringify(d))
 
 
 static func load_slot(slot: int) -> Dictionary:
