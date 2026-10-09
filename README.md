@@ -12,12 +12,16 @@
 ## 快速开始
 
 ```bash
-pip install pillow            # 提取工具只依赖 Pillow
+pip install pillow PyOPL      # PyOPL 用来渲染背景音乐，不装就没有音乐
 scripts/extract.sh /path/to/swda          # 指向包含 SWDA.EXE 的目录
 godot --path game                         # 或者用 Godot 4.3 编辑器打开 game/
 ```
 
-运行后用方向键移动，用 PageUp / PageDown 切换地图（共 116 张）。
+装了 ffmpeg 的话，音乐会压成 OGG（约 16 MB），否则存成 WAV。
+
+操作：方向键移动，Enter / 空格调查和确认，Esc 打开菜单或返回。
+
+测试用的命令行参数（写在 `--` 之后）：`--newgame`、`--entry=N`、`--battle=N`、`--event=N`、`--autoplay=文件`、`--vmtest=all`，说明见 `game/scripts/main.gd`。
 
 ## 测试
 

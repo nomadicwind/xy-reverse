@@ -254,14 +254,15 @@ func _exec(op: int, args: Array) -> void:
 			await game.battle(_a(args, 1), false)
 		0x3D:  # 0x6354
 			GameState.setb(0x1CC, 0x96)
-		0x3E:  # 0x635A journal entry (BOOK.ZAQ), then show the text
+		0x3E:  # 0x635A journal entry (BOOK.ZAQ), then show the text in box
+			# mode [0x78D2]: 0/1 bottom box, 2 top box, 3/5 at x,y, 4 not shown
 			var mode := _a(args, 0)
 			var text: String = args[args.size() - 1]
 			game.add_journal(text)
 			if mode == 3 or mode == 5:
 				await _text_at(_a(args, 1), _a(args, 2), text, mode == 5)
 			elif mode != 4:
-				await _say(text, false, mode == 1)
+				await _say(text, false, mode == 1, mode == 2)
 		0x3F:  # 0x6437 goto when every flag is set
 			var all := true
 			for f in args[1]:

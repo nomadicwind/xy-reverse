@@ -7,6 +7,8 @@ extends Node
 ##   --autoplay=<file>     run an input script (see scripts/autoplay.gd)
 ##   --vmtest=<CHNAn|all>  run every script event once and report problems
 ##   --battle=<n>          fight battle group value n (0 = random encounter)
+##   --event=<n>           run script event n of the starting scene
+##   --learn=<n>           teach the leader skill n (to try spells)
 
 var game: Game
 
@@ -22,16 +24,29 @@ func _ready() -> void:
 	var newgame := false
 	var auto := ""
 	var fight := -1
+	var event := -1
+	var learn := []
 	for a in args:
 		if a.begins_with("--entry="):
 			var v := a.substr(8)
 			entry = v.hex_to_int() if v.begins_with("0x") else int(v)
 		elif a.begins_with("--battle="):
 			fight = int(a.substr(9))
+		elif a.begins_with("--learn="):
+			learn.append(int(a.substr(8)))
+		elif a.begins_with("--event="):
+			event = int(a.substr(8))
 		elif a == "--newgame":
 			newgame = true
 		elif a.begins_with("--autoplay="):
 			auto = a.substr(11)
+		elif a == "--battletest":
+			_start_game()
+			game.field.load_entry(8)
+			await get_tree().process_frame
+			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
 		elif a.begins_with("--vmtest="):
 			_start_game()
 			await get_tree().process_frame
@@ -42,13 +57,23 @@ func _ready() -> void:
 		var ap := Autoplay.new()
 		add_child(ap)
 		ap.run_file(auto)
-	if entry >= 0 or fight >= 0:
+	if entry >= 0 or fight >= 0 or event >= 0:
 		_start_game()
 		game.field.load_entry(entry if entry >= 0 else 8)
+		for sk in learn:
+			for k in 50:
+				if GameState.b(GameState.PARTY + 0x6D + k) == 0:
+					GameState.setb(GameState.PARTY + 0x6D + k, sk)
+					GameState.setw(GameState.PARTY + 0x55, 999)
+					break
 		game._sync_palette()
 		game.set_brightness(1.0)
 		if fight >= 0:
 			await game.battle(fight, false)
+			game.busy = false
+		if event >= 0:
+			game.busy = true
+			await game.vm.run(game.field.scene.get("script", "CHNA1.EXE"), event, 0)
 			game.busy = false
 	elif newgame:
 		_start_game()
@@ -67,6 +92,25 @@ func _start_game() -> void:
 	game.name = "Game"
 	add_child(game)
 	game.finished.connect(_title)
+	game.defeated.connect(_after_defeat)
+
+
+## Pick a save slot and continue from it; back to the title when cancelled.
+func _load_game() -> void:
+	_start_game()
+	game.busy = true
+	var s: int = await FieldMenu.new(game).pick_slot(false)
+	if s < 0:
+		_title()
+		return
+	game.overlay.clear()
+	game.load_saved(SaveFiles.load_slot(s))
+	game.busy = false
+
+
+## RPG.EXE after a lost battle: "全體陣亡！請選一個記錄".
+func _after_defeat() -> void:
+	await _load_game()
 
 
 func _title() -> void:
@@ -82,11 +126,6 @@ func _title() -> void:
 			_start_game()
 			game.start_new_game()
 		1:
-			var d := SaveFiles.load_slot(1)
-			_start_game()
-			if d.is_empty():
-				game.start_new_game()
-			else:
-				game.load_saved(d)
+			await _load_game()
 		_:
 			get_tree().quit()

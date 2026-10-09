@@ -34,6 +34,8 @@ var exp_total := 0
 var money_total := 0
 var crit_counter := 21             # RPG DS:592
 var flee_tries := 0
+var max_rounds := 0                # tests: stop after this many rounds
+var rounds := 0
 
 var _pal_img: Image
 var _pal_tex: Texture2D
@@ -226,7 +228,7 @@ func _write_back() -> void:
 
 # ---------------------------------------------------------------- enemies
 
-func _monster(id: int):
+func _monster(id: int) -> Variant:
 	var ms: Array = data["monsters"]
 	var i := id - 314
 	return ms[i] if i >= 0 and i < ms.size() else null
@@ -385,6 +387,9 @@ func _run_script(at: int) -> void:
 			0x00:
 				await _say(a[0])
 			0x01:
+				rounds += 1
+				if max_rounds > 0 and rounds > max_rounds:
+					return
 				var r := await _round()
 				if r >= 0:
 					pc = _op_index(r)
@@ -726,7 +731,7 @@ func _pick_target(side: Array):
 	return null
 
 
-func _skill(id: int):
+func _skill(id: int) -> Variant:
 	var ss: Array = data["skills"]
 	return ss[id] if id >= 0 and id < ss.size() else null
 
@@ -922,9 +927,8 @@ func _cast(m: Dictionary, sk: Dictionary, target, free := false) -> void:
 	_set_pose(m, 3)
 	if int(sk.get("sfx", 0)):
 		game.play_sfx(int(sk["sfx"]))
-	await _flash_screen()
 	var targets := _skill_targets(sk, m, target, 0)
-	await _apply_skill(m, sk, targets, false)
+	await _play_anim(sk, m, func(): await _apply_skill(m, sk, targets, false))
 	_set_pose(m, 0)
 	# chained effects (+0A)
 	var nxt := int(sk.get("next_skill", 0))
@@ -1052,6 +1056,82 @@ func _apply_skill(caster: Dictionary, sk: Dictionary, targets: Array, enemy_cast
 	_redraw()
 
 
+## Spell animation scripts (FIG 0x4B5B, op table DS:1DD1): frames from an
+## SA.LSK sheet drawn over the battle, palette ramps, shakes, and the point
+## where the effect lands (op 7). `apply` runs there, or at the end.
+func _play_anim(sk: Dictionary, caster: Dictionary, apply: Callable) -> void:
+	var ops: Array = sk.get("anim", [])
+	var applied := false
+	var sheet = null
+	var layer := Node2D.new()
+	layer.z_index = 3
+	add_child(layer)
+	var pending: Array = []
+	var cnode: Sprite2D = caster.get("node")
+	var old_z := cnode.z_index if cnode else 0
+	if Overlay.auto_continue:
+		ops = []
+	for o in ops:
+		var a: Array = o
+		match String(a[0]):
+			"enemy_branch":
+				if caster["side"] == 1:
+					break
+			"load_sa_lsk":
+				sheet = Assets.pictures(0, int(a[1]))
+			"draw":
+				if sheet != null and int(a[1]) < sheet["frames"].size():
+					var sp := _sprite(sheet["texture"], sheet["frames"][int(a[1])], Vector2(int(a[2]) * 4, int(a[3])))
+					sp.visible = false
+					layer.add_child(sp)
+					pending.append(sp)
+			"restore_bg":
+				for c in layer.get_children():
+					if not pending.has(c):
+						c.queue_free()
+			"draw_caster":
+				if cnode:
+					cnode.z_index = 4
+			"flip":
+				for sp in pending:
+					sp.visible = true
+				pending.clear()
+				await _wait(TICK)
+			"delay":
+				await _wait(TICK * maxi(1, int(a[1])))
+			"flash":
+				for k in maxi(1, int(a[1])):
+					set_brightness(1.8)
+					await _wait(TICK)
+					set_brightness(1.0)
+					await _wait(TICK)
+			"apply_damage":
+				if not applied:
+					applied = true
+					await apply.call()
+			"pal_sub", "pal_fade_down":
+				set_brightness(0.55)
+			"pal_add", "pal_fade_up":
+				set_brightness(1.35)
+			"pal_restore":
+				set_brightness(1.0)
+			"shake_redraw", "shake_range":
+				for k in 4:
+					position.y = 3 if k % 2 == 0 else -3
+					await _wait(TICK * 0.5)
+				position.y = 0
+			"sfx":
+				game.play_sfx(int(a[1]))
+	set_brightness(1.0)
+	layer.queue_free()
+	if cnode:
+		cnode.z_index = old_z
+	if not applied:
+		if ops.is_empty() and not Overlay.auto_continue:
+			await _flash_screen()
+		await apply.call()
+
+
 func _flash_screen() -> void:
 	for k in 2:
 		set_brightness(1.6)
@@ -1159,8 +1239,8 @@ func _enemy_act(e: Dictionary) -> void:
 			await _message(String(sk["name"]), 0.4)
 			if int(sk.get("sfx", 0)):
 				game.play_sfx(int(sk["sfx"]))
-			await _flash_screen()
-			await _apply_skill(e, sk, _skill_targets(sk, e, target, 1), true)
+			var tg := _skill_targets(sk, e, target, 1)
+			await _play_anim(sk, e, func(): await _apply_skill(e, sk, tg, true))
 			return
 	await _attack_member(e, target)
 
