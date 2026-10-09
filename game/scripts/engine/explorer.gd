@@ -7,6 +7,8 @@ extends RefCounted
 ## cannot lose. Prints every new scene and chapter so a stall shows up as the
 ## log going quiet.
 
+const STALL_STEPS := 30000
+
 var game: Game
 var god := true
 var visits := {}            # "entry:kind:index|story" -> times tried
@@ -16,6 +18,9 @@ var chapters_seen := {}
 var steps := 0
 var events := 0
 var battles := 0
+var best_state := {}          # state at the best flag count, for restarts
+var best_step := 0
+var restarts := 0
 var dump_path := ""          # save the game state here with every status line
 
 
@@ -125,7 +130,21 @@ func _note_scene() -> void:
 	var fc := _flag_count()
 	if fc > best_flags:
 		best_flags = fc
+		best_step = steps
+		best_state = GameState.to_save()
+		best_state["meta"] = {"pos": game.field.party_place()}
+		if dump_path != "":
+			var f := FileAccess.open(dump_path.get_basename() + ".best.json", FileAccess.WRITE)
+			if f:
+				f.store_string(JSON.stringify(best_state))
 		print("[explore] flags %d at map %d entry %d after %d steps" % [fc, game.field.map_id, game.field.entry_ref, steps])
+	elif steps - best_step > STALL_STEPS and not best_state.is_empty():
+		# go back to the best state and try other paths from there
+		restarts += 1
+		best_step = steps
+		visits.clear()
+		game.load_saved(best_state.duplicate(true))
+		print("[explore] no progress for %d steps, back to flags %d (restart %d)" % [STALL_STEPS, best_flags, restarts])
 	var ref := game.field.entry_ref
 	entries_seen[ref] = entries_seen.get(ref, 0) + 1
 	if ref != _last_ref:
