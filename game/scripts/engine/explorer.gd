@@ -206,6 +206,9 @@ func _targets() -> Array:
 		# treasure); only 3 and 8 are switched off (field.gd talk check)
 		if a.event == 0 or a.state == 3 or a.state == 8:
 			continue
+		# no place on the map: reached only through a trigger zone
+		if a.pos == 0:
+			continue
 		var oc := f.pos_to_cell(a.pos)
 		var goals := {}
 		# below facing up, above facing down, beside facing left/right
@@ -224,9 +227,16 @@ func _targets() -> Array:
 		var key := "%d:z:%d" % [f.entry_ref, zi]
 		if not (act & 0x4000) and not entries_seen.has(act & 0xFFF):
 			key = "new:%d" % (act & 0xFFF)
+		# object zones (0x4000) whose object is in state 9 need the action
+		# key while standing inside (game.gd _zone)
+		var face := -1
+		if act & 0x4000:
+			var oi := (act & 0xBFFF) / 2
+			if oi < f.objects.size() and f.objects[oi].state == 9:
+				face = -2
 		for r in range(a / w, b / w + 1):
 			for c in range(a % w, b % w + 1):
-				goals[r * w + c] = -1
+				goals[r * w + c] = face
 		out.append([key, goals, act & 0xFFF])
 	return out
 
@@ -338,7 +348,9 @@ func _go_somewhere() -> bool:
 ## Walk until the leader stands on cell, re-planning when pushed off the
 ## path. Stops early when an event or a warp takes over.
 func _walk_to(goal: int, face: int) -> bool:
-	if face < 0 and game.field.leader_cell() == goal:
+	if face == -2 and game.field.leader_cell() == goal:
+		return await _tick(true, -1)
+	if face == -1 and game.field.leader_cell() == goal:
 		# already standing in the zone: step out so the next try walks in
 		await _wander(2)
 		return false
@@ -357,6 +369,8 @@ func _walk_to(goal: int, face: int) -> bool:
 			break
 	if face >= 0:
 		await _tick(false, face)
+		await _tick(true, -1)
+	elif face == -2 and game.field.leader_cell() == goal:
 		await _tick(true, -1)
 	return true
 
