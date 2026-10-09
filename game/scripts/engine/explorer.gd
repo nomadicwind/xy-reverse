@@ -69,8 +69,13 @@ func run(seconds: float, start_entry := -1) -> void:
 ## Every few seconds, where things stand; shows what a hang is stuck on.
 func _heartbeat(t_end: int) -> void:
 	var last_steps := -1
+	var beat := 0
 	while Time.get_ticks_msec() < t_end + 5000:
 		await game.get_tree().create_timer(5.0, true, false, true).timeout
+		beat += 1
+		if beat % 12 == 0:
+			print("[explore] status: entry %d map %d, %d steps, %d events, flags %d" % [
+				game.field.entry_ref, game.field.map_id, steps, events, _flag_count()])
 		if steps == last_steps:
 			var vm := game.vm
 			var op = vm.ops[vm.pc - 1] if vm.running and vm.pc > 0 and vm.pc <= vm.ops.size() else null
