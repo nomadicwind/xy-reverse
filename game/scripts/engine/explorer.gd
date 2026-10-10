@@ -170,6 +170,13 @@ func _dump() -> void:
 		f.store_string(JSON.stringify(d))
 
 
+## Items that some story event tests for (op 0x28 with an item id), from
+## all CHNA*.EXE scripts; the bot never throws these away.
+const NEEDED_ITEMS := [3, 5, 7, 8, 11, 12, 17, 21, 22, 23, 24, 26, 35, 42, 44, 47, 54, 63, 64,
+		75, 176, 181, 215, 368, 377, 384, 386, 391, 400, 410, 462, 464, 465, 467, 469, 473,
+		483, 493, 500, 542, 567]
+
+
 func _top_up() -> void:
 	# random shopping fills the bag, and a full bag refuses story items:
 	# keep one of each item once it gets crowded
@@ -183,6 +190,14 @@ func _top_up() -> void:
 		for v in ids:
 			if not keep.has(v):
 				keep.append(v)
+		# still crowded: drop items no script ever asks for
+		var spare := keep.size() - 36
+		for v in keep.duplicate():
+			if spare <= 0:
+				break
+			if not NEEDED_ITEMS.has(v):
+				keep.erase(v)
+				spare -= 1
 		for k in 50:
 			GameState.setw(GameState.ITEMS + k * 2, keep[k] if k < keep.size() else 0)
 	for i in GameState.party_count():
