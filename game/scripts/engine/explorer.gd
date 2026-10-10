@@ -38,6 +38,10 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 	game.defeated.connect(func():
 		print("[explore] party defeated")
 		lost[0] = true)
+	# op 0x34 after the ending: back to the title, the game scene goes away
+	game.finished.connect(func():
+		print("[explore] the end: back to the title after %d steps" % steps)
+		ended = true)
 	if resume != "":
 		GameState.new_game()
 		var saved = JSON.parse_string(FileAccess.get_file_as_string(resume))
@@ -59,7 +63,7 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 	_heartbeat(t_end)
 	var idle := 0
 	var next_dump := 0
-	while Time.get_ticks_msec() < t_end and not lost[0]:
+	while Time.get_ticks_msec() < t_end and not lost[0] and not ended:
 		_note_scene()
 		if dump_path != "" and Time.get_ticks_msec() >= next_dump:
 			next_dump = Time.get_ticks_msec() + 30000
@@ -95,6 +99,8 @@ func _heartbeat(t_end: int) -> void:
 	var beat := 0
 	while Time.get_ticks_msec() < t_end + 5000:
 		await game.get_tree().create_timer(5.0, true, false, true).timeout
+		if ended:
+			return
 		beat += 1
 		if beat % 12 == 0:
 			print("[explore] status: entry %d map %d, %d steps, %d events, flags %d, last %s" % [
@@ -429,6 +435,7 @@ var debug := false
 
 var zone_cells := {}
 var _avoid := false
+var ended := false              # the story finished and went back to the title
 var plan: Array = []           # --plan=key,key: targets to try first
 
 
@@ -499,9 +506,14 @@ func _go_somewhere() -> bool:
 
 
 ## A plan key names an entry, but the scene may have been entered by another
-## of its entries: "730:z:1" also matches "734:z:1" in the same scene. A key
-## starting with ":" matches any entry.
+## of its entries: "~730:z:1" also matches "734:z:1" in the same scene. A key
+## starting with ":" matches any entry. Plain keys match their entry only,
+## since one scene can hold several areas joined by zones.
 func _same_scene_key(key: String, raw: String) -> bool:
+	if key.begins_with("~"):
+		key = key.substr(1)
+	elif not key.begins_with(":"):
+		return false
 	var a := key.get_slice(":", 0)
 	var b := raw.get_slice(":", 0)
 	if key.substr(a.length()) != raw.substr(b.length()):
@@ -568,11 +580,15 @@ func _wander(n: int) -> void:
 
 ## One field tick; true when an event or warp happened.
 func _tick(accept: bool, d: int) -> bool:
+	if ended:
+		return true
 	while game.busy:
 		await game.get_tree().process_frame
 	var ref := game.field.entry_ref
 	var vm_runs := game.vm.runs
 	await game._field_tick(accept, d)
+	if ended:
+		return true
 	while game.busy:
 		await game.get_tree().process_frame
 	steps += 1
