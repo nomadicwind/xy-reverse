@@ -467,7 +467,7 @@ func _go_somewhere() -> bool:
 		for t in _targets():
 			# a key starting with ":" matches any entry of the scene
 			var raw: String = t[3] if t.size() > 3 else t[0]
-			if plan[0] in [t[0], raw] or (plan[0].begins_with(":") and raw.ends_with(plan[0])):
+			if plan[0] in [t[0], raw] or _same_scene_key(plan[0], raw):
 				for g in _goal_order(t[1], careful, reach):
 					if reach.has(g):
 						best = [t[0] + "|plan", g, t[1][g]]
@@ -496,6 +496,23 @@ func _go_somewhere() -> bool:
 		var f := game.field
 		print("[explore] -> %s goal %d now at %d entry %d result %s runs %d" % [best[0], best[1], f.leader_cell(), f.entry_ref, r, game.vm.runs])
 	return r
+
+
+## A plan key names an entry, but the scene may have been entered by another
+## of its entries: "730:z:1" also matches "734:z:1" in the same scene. A key
+## starting with ":" matches any entry.
+func _same_scene_key(key: String, raw: String) -> bool:
+	var a := key.get_slice(":", 0)
+	var b := raw.get_slice(":", 0)
+	if key.substr(a.length()) != raw.substr(b.length()):
+		return false
+	if a == "":
+		return true
+	if not a.is_valid_int() or not b.is_valid_int():
+		return false
+	var ea = Assets.entry(int(a))
+	var eb = Assets.entry(int(b))
+	return ea != null and eb != null and int(ea["scene"]) == int(eb["scene"])
 
 
 ## Goal cells reachable without crossing other zones first, so a doorway
