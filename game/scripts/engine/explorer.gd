@@ -41,6 +41,10 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 	if resume != "":
 		GameState.new_game()
 		game.load_saved(JSON.parse_string(FileAccess.get_file_as_string(resume)))
+		if start_entry >= 0:
+			# jump to another place with the resumed story state
+			game.field.load_entry(start_entry)
+			game._sync_palette()
 	elif start_entry >= 0:
 		GameState.new_game()
 		game.field.load_entry(start_entry)
@@ -146,6 +150,14 @@ func _note_scene() -> void:
 		game.load_saved(best_state.duplicate(true))
 		print("[explore] no progress for %d steps, back to flags %d (restart %d)" % [STALL_STEPS, best_flags, restarts])
 	var ref := game.field.entry_ref
+	if not entries_seen.has(ref):
+		# a place never seen counts as progress (mazes such as CHNA5's tomb
+		# give no flags until the end); at the best flag count it becomes
+		# the state to come back to
+		best_step = steps
+		if fc == best_flags:
+			best_state = GameState.to_save()
+			best_state["meta"] = {"pos": game.field.party_place()}
 	entries_seen[ref] = entries_seen.get(ref, 0) + 1
 	if ref != _last_ref:
 		if debug:
