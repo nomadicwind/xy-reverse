@@ -196,7 +196,8 @@ func _zone(z: Array, accept: bool) -> bool:
 			var st := field.objects[i].state
 			if st != 8 and (st != 9 or accept):
 				await run_object_event(i)
-				return true
+		# RPG.EXE 0x1CD2: the tick goes on to the keys after an object zone,
+		# so the party can walk out of a zone whose event does nothing
 		return false
 	if action & 0x2000:
 		var flag_byte := int(z[0]) >> 8
