@@ -133,10 +133,30 @@ func _flag_count() -> int:
 	return n
 
 
+## Flags seen set at any time in this run. The story clears flags too
+## (CHNA7 drops 213 when it sets 217 and 219), so a count can fall while the
+## story moves on; a flag set for the first time is progress whatever the count.
+var flags_ever := {}
+
+
+func _new_flags() -> bool:
+	var found := false
+	for off in range(GameState.FLAGS, 0x612):
+		var v := GameState.ds[off]
+		if v == 0:
+			continue
+		for bit in 8:
+			if v & (1 << bit) and not flags_ever.has(off * 8 + bit):
+				flags_ever[off * 8 + bit] = true
+				found = true
+	return found
+
+
 func _note_scene() -> void:
 	var fc := _flag_count()
-	if fc > best_flags:
-		best_flags = fc
+	var fresh := _new_flags() and steps > 0
+	if fc > best_flags or fresh:
+		best_flags = maxi(fc, best_flags)
 		best_step = steps
 		best_state = GameState.to_save()
 		best_state["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
