@@ -235,6 +235,8 @@ func _top_up() -> void:
 				spare -= 1
 		for k in 50:
 			GameState.setw(GameState.ITEMS + k * 2, keep[k] if k < keep.size() else 0)
+	# charms the story asks for are made from the skills menu (製作)
+	_make_charms()
 	for i in GameState.party_count():
 		var rec := GameState.PARTY + i * GameState.PARTY_REC
 		if GameState.w(rec + 0x2F) < 3000:
@@ -242,6 +244,29 @@ func _top_up() -> void:
 			GameState.setw(rec + 0x0C, maxi(GameState.w(rec + 0x0C), 400))
 		GameState.setw(rec + 0x2D, GameState.w(rec + 0x2F))
 		GameState.setw(rec + 0x08, 0)
+
+
+## Like the skills menu's 製作 button (FieldMenu.make_charm): one of each
+## needed charm a member can make, while the last bag slot is free.
+func _make_charms() -> void:
+	var skills: Array = Battle.battle_data().get("skills", [])
+	var have := {}
+	for k in 50:
+		have[GameState.w(GameState.ITEMS + k * 2)] = true
+	for i in GameState.party_count():
+		var rec := GameState.PARTY + i * GameState.PARTY_REC
+		for k in 50:
+			var s := GameState.b(rec + 0x6D + k)
+			if s == 0 or s >= skills.size():
+				continue
+			var id := int(skills[s].get("w16", 0))
+			if id == 0 or have.has(id) or not NEEDED_ITEMS.has(id):
+				continue
+			if GameState.w(GameState.ITEMS + 49 * 2) != 0:
+				return
+			GameState.setw(GameState.ITEMS + 49 * 2, id)
+			FieldMenu.pack_bag()
+			have[id] = true
 
 
 # ------------------------------------------------------------------ targets
@@ -453,6 +478,11 @@ func _go_somewhere() -> bool:
 					var f2 := game.field
 					print("[explore] plan %s unreachable: goals %s leader %d" % [plan[0], t[1].keys(), f2.leader_cell()])
 				break
+	if debug and not plan.is_empty() and (best == null or not best[0].ends_with("|plan")):
+		var zs := []
+		for z in game.field.zones:
+			zs.append("%x@%x" % [int(z[3]), game.field.cell(game.field.pos_to_cell(int(z[1])))])
+		print("[explore] plan %s not here; zones %s" % [plan[0], zs])
 	# go round other zones when the goal can be reached that way
 	if best != null:
 		_avoid = careful.has(best[1])

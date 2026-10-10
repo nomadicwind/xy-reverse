@@ -497,6 +497,16 @@ func _skills() -> void:
 	if i < 0:
 		return
 	var sk: Dictionary = ids[i]
+	# RPG 0x33C5: three buttons after picking a skill: cast, describe, make
+	var act := await choose(["施展", "說明", "製作"], Vector2(160, 8))
+	if act < 0:
+		return
+	if act == 1:
+		await message("%s　%s %d" % [String(sk["name"]), _cost_name(sk), int(sk["cost"])])
+		return
+	if act == 2:
+		await make_charm(m, sk)
+		return
 	# RPG 0x341D: skill +0D bit 0x80 = battle only; 0x34AB: effect 5 土地神
 	# needs a map without 0x4000, effect 6 乘龍 a map with 0x8000 (world map)
 	var effect := int(sk.get("effect", 0))
@@ -531,6 +541,44 @@ func _skills() -> void:
 			_heal_member(m, mm, sk)
 	elif not _heal_member(m, t, sk):
 		await message("此人無法使用！")
+
+
+## 製作 (RPG 0x3573): a charm skill writes its charm item (skill +16) into
+## the last bag slot and the bag is packed; no cost is paid.
+func make_charm(m: int, sk: Dictionary) -> bool:
+	if GameState.w(_rec(m) + 0x08) & 0xE000:
+		await message("瀕死昏迷中！")
+		return false
+	if GameState.w(INV + (INV_N - 1) * 2) != 0:
+		await message("物品滿了！無法再增加！")
+		return false
+	var id := int(sk.get("w16", 0))
+	GameState.setw(INV + (INV_N - 1) * 2, id)
+	pack_bag()
+	game.play_sfx(0x15)
+	return true
+
+
+## RPG 0x3FC8: close the gaps in the bag.
+static func pack_bag() -> void:
+	var ids := []
+	for k in INV_N:
+		var v := GameState.w(INV + k * 2)
+		if v != 0:
+			ids.append(v)
+	for k in INV_N:
+		GameState.setw(INV + k * 2, ids[k] if k < ids.size() else 0)
+
+
+func _cost_name(sk: Dictionary) -> String:
+	match String(sk.get("cost_type", "")):
+		"mp":
+			return "仙術"
+		"stamina":
+			return "體力"
+		"herbs":
+			return "藥材"
+	return ""
 
 
 ## 乘龍念法 (RPG 0x378E): the places whose flag DS:612+n is 1, by name.
