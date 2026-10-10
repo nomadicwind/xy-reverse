@@ -60,6 +60,12 @@ func hidden_state() -> bool:
 	return state == 3 or state == 7 or state == 8 or state == 9
 
 
+## Whether the object blocks its cells (RPG.EXE 0x5432): state 7 is drawn
+## nowhere but still solid, so it can be examined (hidden switches).
+func solid() -> bool:
+	return state != 3 and state != 8 and state != 9
+
+
 ## Frame index inside the sheet: base + facing + walk phase (0, 1, 2, 1).
 func frame_index() -> int:
 	var phase := 1 if (anim & 1) else anim

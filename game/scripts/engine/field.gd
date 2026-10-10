@@ -238,7 +238,7 @@ func _build_objects() -> void:
 		_assign_sheet(a)
 		actors_root.add_child(a)
 		objects.append(a)
-		if not a.hidden_state():
+		if a.solid():
 			_occupy(a.pos, true)
 	_refresh_party_sheets()
 
@@ -555,7 +555,7 @@ func update_objects() -> void:
 				a.anim = 0
 		elif a.state == 0:
 			_wander(a)
-		if not a.hidden_state():
+		if a.solid():
 			_occupy(a.pos, true)
 
 
@@ -679,7 +679,7 @@ func set_object_state(i: int, st: int) -> void:
 	var a := objects[i]
 	_occupy(a.pos, false)
 	a.state = st
-	if not a.hidden_state():
+	if a.solid():
 		_occupy(a.pos, true)
 
 
@@ -704,7 +704,7 @@ func move_object(i: int, dir: int) -> void:
 	a.frame_dir = dir
 	if a.state != 4:
 		a.anim = (a.anim + 1) % 4
-	if not a.hidden_state():
+	if a.solid():
 		_occupy(a.pos, true)
 	redraw()
 
