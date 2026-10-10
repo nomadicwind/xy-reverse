@@ -133,8 +133,28 @@ func _flag_count() -> int:
 	return n
 
 
+## Story order of the chapter scripts (the files are not numbered in play
+## order: 太室山 CHNA6 comes after CHNA2).
+const CHAPTER_ORDER := ["CHNA1", "CHNA2", "CHNA6", "CHNA3", "CHNA4", "CHNA5", "CHNA7", "CHNA8",
+		"CHNA9", "CHNA10", "CHNA11", "CHNA12", "CHNA13", "CHNA14", "CHNA15", "CHNA16"]
+
+
+## Furthest chapter among the scenes this game has visited.
+func _chapter_rank() -> int:
+	var best := 0
+	for k in GameState.scenes:
+		var sc = Assets.scene(int(k))
+		if sc == null:
+			continue
+		var ch: String = str(sc.get("script", "")).get_basename()
+		best = maxi(best, CHAPTER_ORDER.find(ch) + 1)
+	return best
+
+
 func _note_scene() -> void:
-	var fc := _flag_count()
+	# progress = furthest chapter first, then story flags: side flags in
+	# early chapters must not pull the bot back from the frontier
+	var fc := _chapter_rank() * 1000 + _flag_count()
 	if fc > best_flags:
 		best_flags = fc
 		best_step = steps
@@ -338,6 +358,8 @@ func _next_hop() -> int:
 	var first := {start: -1}
 	var queue := [start]
 	var head := 0
+	var fallback := -1
+	var frontier := _chapter_rank() - 1
 	while head < queue.size() and head < 2000:
 		var r: int = queue[head]
 		head += 1
@@ -346,9 +368,23 @@ func _next_hop() -> int:
 				continue
 			first[n] = n if r == start else first[r]
 			if not entries_seen.has(n):
-				return first[n]
+				# places of earlier chapters only when nothing newer is left
+				if _entry_rank(n) >= frontier:
+					return first[n]
+				if fallback < 0:
+					fallback = first[n]
 			queue.append(n)
-	return -1
+	return fallback
+
+
+func _entry_rank(ref: int) -> int:
+	var e = Assets.entry(ref)
+	if e == null:
+		return 0
+	var sc = Assets.scene(int(e["scene"]))
+	if sc == null:
+		return 0
+	return CHAPTER_ORDER.find(str(sc.get("script", "")).get_basename()) + 1
 
 
 ## Every cell of the scene's trigger zones.
