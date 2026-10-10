@@ -263,7 +263,10 @@ func _targets() -> Array:
 				face = -2
 		for r in range(a / w, b / w + 1):
 			for c in range(a % w, b % w + 1):
-				goals[r * w + c] = face
+				# only cells flagged 0x1000 trigger (RPG.EXE 0x1CC5); a zone's
+				# rectangle can be larger than its flagged cells
+				if f.cell(r * w + c) & 0x1000:
+					goals[r * w + c] = face
 		out.append([key, goals, act & 0xFFF])
 	return out
 
