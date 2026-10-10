@@ -713,7 +713,9 @@ func move_object(i: int, dir: int) -> void:
 func reposition(view_off: int, vx: int, vy: int, x: int, y: int, dir: int) -> void:
 	view_x = vx
 	view_y = vy
-	_place_party(x, y, dir)
+	# signed: cut scenes start the party off screen and walk it in
+	# (CHNA3:400 puts it at y -24, then 13 steps down)
+	_place_party(Actor._s16(x), Actor._s16(y), dir)
 	_mark_party()
 	redraw()
 
