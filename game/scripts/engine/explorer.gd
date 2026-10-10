@@ -302,7 +302,7 @@ func _reach(avoid := false) -> Dictionary:
 	var prev := {start: [-1, -1]}
 	var queue := [start]
 	var head := 0
-	while head < queue.size() and head < 30000:
+	while head < queue.size():
 		var c: int = queue[head]
 		head += 1
 		for d in [0, 3, 6, 9]:
@@ -377,11 +377,16 @@ func _zone_cells() -> Dictionary:
 	var w := f.map_w
 	var out := {}
 	for z in f.zones:
+		# object zones run an event and let the party walk on; only doors
+		# (warps) are worth walking round
+		if int(z[3]) & 0x4000:
+			continue
 		var a := f.pos_to_cell(int(z[1]))
 		var b := f.pos_to_cell(int(z[2]))
 		for r in range(a / w, b / w + 1):
 			for c in range(a % w, b % w + 1):
-				out[r * w + c] = true
+				if f.cell(r * w + c) & 0x1000:
+					out[r * w + c] = true
 	return out
 
 
@@ -419,7 +424,7 @@ func _go_somewhere() -> bool:
 		var worn: int = visits.get(t[0], 0) * 20
 		if t.size() > 2:
 			worn += int(entries_seen.get(t[2], 0)) / 4
-		for g in t[1]:
+		for g in _goal_order(t[1], careful, reach):
 			if reach.has(g):
 				var score := v * 1000 + worn + randi() % 50 - (500 if key.begins_with("new:") else 0)
 				# objects never examined in any story state come first too
@@ -437,10 +442,10 @@ func _go_somewhere() -> bool:
 		for t in _targets():
 			# a key starting with ":" matches any entry of the scene
 			if t[0] == plan[0] or (plan[0].begins_with(":") and t[0].ends_with(plan[0])):
-				for g in t[1]:
+				for g in _goal_order(t[1], careful, reach):
 					if reach.has(g):
 						best = [t[0] + "|plan", g, t[1][g]]
-						print("[explore] plan: %s" % plan[0])
+						print("[explore] plan: %s (careful %s, %d/%d cells)" % [plan[0], careful.has(g), careful.size(), reach.size()])
 						plan.pop_front()
 						break
 				break
@@ -457,6 +462,19 @@ func _go_somewhere() -> bool:
 		var f := game.field
 		print("[explore] -> %s goal %d now at %d entry %d result %s runs %d" % [best[0], best[1], f.leader_cell(), f.entry_ref, r, game.vm.runs])
 	return r
+
+
+## Goal cells reachable without crossing other zones first, so a doorway
+## the party could walk into safely isn't approached through another door.
+func _goal_order(goals: Dictionary, careful: Dictionary, reach: Dictionary) -> Array:
+	var safe := []
+	var rest := []
+	for g in goals:
+		if careful.has(g):
+			safe.append(g)
+		elif reach.has(g):
+			rest.append(g)
+	return safe + rest
 
 
 ## Walk until the leader stands on cell, re-planning when pushed off the
