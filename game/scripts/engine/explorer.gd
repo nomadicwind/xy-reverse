@@ -290,7 +290,7 @@ func _targets() -> Array:
 				# rectangle can be larger than its flagged cells
 				if f.cell(r * w + c) & 0x1000:
 					goals[r * w + c] = face
-		out.append([key, goals, act & 0xFFF])
+		out.append([key, goals, act & 0xFFF, "%d:z:%d" % [f.entry_ref, zi]])
 	return out
 
 
@@ -429,7 +429,7 @@ func _go_somewhere() -> bool:
 				var score := v * 1000 + worn + randi() % 50 - (500 if key.begins_with("new:") else 0)
 				# objects never examined in any story state come first too
 				if ":o:" in t[0] and not visits.has(t[0]):
-					score -= 500
+					score -= 700
 				# the next door on the way to a place never visited
 				if t.size() > 2 and t[2] == hop:
 					score -= 800
@@ -441,13 +441,17 @@ func _go_somewhere() -> bool:
 	if not plan.is_empty():
 		for t in _targets():
 			# a key starting with ":" matches any entry of the scene
-			if t[0] == plan[0] or (plan[0].begins_with(":") and t[0].ends_with(plan[0])):
+			var raw: String = t[3] if t.size() > 3 else t[0]
+			if plan[0] in [t[0], raw] or (plan[0].begins_with(":") and raw.ends_with(plan[0])):
 				for g in _goal_order(t[1], careful, reach):
 					if reach.has(g):
 						best = [t[0] + "|plan", g, t[1][g]]
 						print("[explore] plan: %s (careful %s, %d/%d cells)" % [plan[0], careful.has(g), careful.size(), reach.size()])
 						plan.pop_front()
 						break
+				if debug and (best == null or not best[0].ends_with("|plan")):
+					var f2 := game.field
+					print("[explore] plan %s unreachable: goals %s leader %d" % [plan[0], t[1].keys(), f2.leader_cell()])
 				break
 	# go round other zones when the goal can be reached that way
 	if best != null:
