@@ -40,7 +40,10 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 		lost[0] = true)
 	if resume != "":
 		GameState.new_game()
-		game.load_saved(JSON.parse_string(FileAccess.get_file_as_string(resume)))
+		var saved = JSON.parse_string(FileAccess.get_file_as_string(resume))
+		game.load_saved(saved)
+		for r in saved.get("meta", {}).get("seen", []):
+			entries_seen[int(r)] = 1
 		if start_entry >= 0:
 			# jump to another place with the resumed story state
 			game.field.load_entry(start_entry)
@@ -136,7 +139,7 @@ func _note_scene() -> void:
 		best_flags = fc
 		best_step = steps
 		best_state = GameState.to_save()
-		best_state["meta"] = {"pos": game.field.party_place()}
+		best_state["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
 		if dump_path != "":
 			var f := FileAccess.open(dump_path.get_basename() + ".best.json", FileAccess.WRITE)
 			if f:
@@ -176,7 +179,7 @@ func _note_scene() -> void:
 ## The game state between two moves, for --resume.
 func _dump() -> void:
 	var d := GameState.to_save()
-	d["meta"] = {"pos": game.field.party_place()}
+	d["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
 	var f := FileAccess.open(dump_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
@@ -307,6 +310,47 @@ func _reach(avoid := false) -> Dictionary:
 	return prev
 
 
+## Doors between entry points, from the zone tables: entry -> [entries].
+var _doors := {}
+
+
+func _doors_of(ref: int) -> Array:
+	if _doors.has(ref):
+		return _doors[ref]
+	var out := []
+	var e = Assets.entry(ref)
+	if e != null:
+		var sc = Assets.scene(int(e["scene"]))
+		if sc != null:
+			for z in Assets.zones.get(str(int(sc["map_id"]) & 0x7FF), []):
+				var act := int(z[3])
+				if not (act & 0x4000) and Assets.entry(act & 0xFFF) != null:
+					out.append(act & 0xFFF)
+	_doors[ref] = out
+	return out
+
+
+## First door on the shortest way (by door count, ignoring walls) from here
+## to an entry point never visited, or -1. Map-wide exploration otherwise
+## wanders between known places; this pulls the bot to the edge of the map.
+func _next_hop() -> int:
+	var start := game.field.entry_ref
+	var first := {start: -1}
+	var queue := [start]
+	var head := 0
+	while head < queue.size() and head < 2000:
+		var r: int = queue[head]
+		head += 1
+		for n in _doors_of(r):
+			if first.has(n):
+				continue
+			first[n] = n if r == start else first[r]
+			if not entries_seen.has(n):
+				return first[n]
+			queue.append(n)
+	return -1
+
+
 ## Every cell of the scene's trigger zones.
 func _zone_cells() -> Dictionary:
 	var f := game.field
@@ -345,6 +389,7 @@ func _go_somewhere() -> bool:
 	var best = null
 	var best_score := 1 << 30
 	var story := _story()
+	var hop := _next_hop()
 	for t in _targets():
 		var key: String = "%s|%d" % [t[0], story]
 		var v: int = visits.get(key, 0)
@@ -360,6 +405,9 @@ func _go_somewhere() -> bool:
 				# objects never examined in any story state come first too
 				if ":o:" in t[0] and not visits.has(t[0]):
 					score -= 500
+				# the next door on the way to a place never visited
+				if t.size() > 2 and t[2] == hop:
+					score -= 800
 				if score < best_score:
 					best_score = score
 					best = [key, g, t[1][g]]
