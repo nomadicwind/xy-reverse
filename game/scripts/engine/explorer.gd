@@ -21,6 +21,21 @@ var battles := 0
 var best_state := {}          # state at the best flag count, for restarts
 var best_step := 0
 var restarts := 0
+var restarts_here := 0         # restarts since the best state last changed
+var history := []              # earlier best states, newest last
+
+
+func _scene_of(state: Dictionary) -> int:
+	var e = Assets.entry(int(state.get("entry", -1)))
+	return int(e["scene"]) if e != null else -1
+
+
+func _remember_best() -> void:
+	restarts_here = 0
+	if not best_state.is_empty():
+		history.append(best_state)
+		if history.size() > 12:
+			history.pop_front()
 var dump_path := ""          # save the game state here with every status line
 
 
@@ -164,6 +179,7 @@ func _note_scene() -> void:
 	if fc > best_flags or fresh:
 		best_flags = maxi(fc, best_flags)
 		best_step = steps
+		_remember_best()
 		best_state = GameState.to_save()
 		best_state["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
 		if dump_path != "":
@@ -174,8 +190,22 @@ func _note_scene() -> void:
 	elif steps - best_step > STALL_STEPS and not best_state.is_empty():
 		# go back to the best state and try other paths from there
 		restarts += 1
+		restarts_here += 1
 		best_step = steps
 		visits.clear()
+		# the best state can be a trap (a puzzle left unsolvable, as in
+		# CHNA6's 木人巷): after a few tries go back to an earlier one
+		if restarts_here > 3 and not history.is_empty():
+			# leave the trapped scene: skip saves made inside it
+			var trap := _scene_of(best_state)
+			while history.size() > 1 and _scene_of(history.back()) == trap:
+				history.pop_back()
+			best_state = history.pop_back()
+			restarts_here = 0
+			game.load_saved(best_state.duplicate(true))
+			# winning the lost flags back counts as progress again
+			best_flags = _flag_count()
+			print("[explore] backtracking to an earlier state (flags %d, entry %d)" % [best_flags, game.field.entry_ref])
 		game.load_saved(best_state.duplicate(true))
 		print("[explore] no progress for %d steps, back to flags %d (restart %d)" % [STALL_STEPS, best_flags, restarts])
 	var ref := game.field.entry_ref
@@ -185,6 +215,7 @@ func _note_scene() -> void:
 		# the state to come back to
 		best_step = steps
 		if fc == best_flags:
+			_remember_best()
 			best_state = GameState.to_save()
 			best_state["meta"] = {"pos": game.field.party_place()}
 	entries_seen[ref] = entries_seen.get(ref, 0) + 1
