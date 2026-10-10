@@ -7,8 +7,11 @@ extends Node
 ##   --autoplay=<file>     run an input script (see scripts/autoplay.gd)
 ##   --vmtest=<CHNAn|all>  run every script event once and report problems
 ##   --battle=<n>          fight battle group value n (0 = random encounter)
+##   --creaturetest        capture, summon and 防禦 creatures in one scripted battle
 ##   --event=<n>           run script event n of the starting scene
 ##   --learn=<n>           teach the leader skill n (to try spells)
+##   --explore=<seconds>   let a bot play a new game (scripts/engine/explorer.gd);
+##                         --entry=N, --dump=FILE / --resume=FILE (state), --debug
 
 var game: Game
 
@@ -45,6 +48,39 @@ func _ready() -> void:
 			game.field.load_entry(8)
 			await get_tree().process_frame
 			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
+		elif a.begins_with("--stress="):
+			_start_game()
+			await get_tree().process_frame
+			await VmTest.run_stress(game, int(a.substr(9)))
+			get_tree().quit()
+			return
+		elif a == "--creaturetest":
+			_start_game()
+			game.field.load_entry(8)
+			await get_tree().process_frame
+			await VmTest.run_creatures(game)
+			get_tree().quit()
+			return
+		elif a.begins_with("--explore="):
+			_start_game()
+			await get_tree().process_frame
+			var ex := Explorer.new(game)
+			ex.debug = "--debug" in args
+			game.vm.trace = "--trace" in args
+			var at := -1
+			var resume := ""
+			for b in args:
+				if b.begins_with("--entry="):
+					at = int(b.substr(8))
+				elif b.begins_with("--dump="):
+					ex.dump_path = b.substr(7)
+				elif b.begins_with("--resume="):
+					resume = b.substr(9)
+				elif b.begins_with("--plan="):
+					ex.plan = Array(b.substr(7).split(","))
+			await ex.run(float(a.substr(10)), at, resume)
 			get_tree().quit()
 			return
 		elif a.begins_with("--vmtest="):

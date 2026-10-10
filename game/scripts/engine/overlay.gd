@@ -3,7 +3,7 @@ extends Node2D
 ## Text, dialogue boxes and pictures drawn over the field, using the game's
 ## own 16x15 glyphs. Text markup from the scripts:
 ##   ##  new line        %%  wait for a key, then a new page
-##   &&  scroll a line   {C16}  text colour (palette index)   {M26}  shadow colour
+##   &&  scroll a line   {C16}  text colour (palette index)   {M26}  shadow colour ({M-1} none)
 
 signal key_pressed
 
@@ -41,6 +41,7 @@ func clear() -> void:
 	items.clear()
 	box = Rect2()
 	frames = []
+	small_frames = []
 	_build_box()
 	waiting_icon = Vector2(-1, -1)
 	queue_redraw()
@@ -55,6 +56,7 @@ func add_picture(tex: Texture2D, region: Rect2, at: Vector2) -> void:
 	# a new portrait replaces the one at the same place
 	items = items.filter(func(it): return not (it["kind"] == "picture" and it["at"] == at))
 	items.append({"kind": "picture", "tex": tex, "region": region, "at": at})
+	_sync_pictures()
 	queue_redraw()
 
 
@@ -76,6 +78,14 @@ func add_frame(at: Vector2, cols: int, rows: int) -> Rect2:
 	return r
 
 
+## The thin frame of RPG.EXE 0x2B9F (title menu): MENU.RSK 0x50..0x52 on top,
+## 0xA8..0xAA for each 16 px row, 0xAB..0xAD at the bottom; `cols` middle
+## pieces of 8 px between 24 px ends.
+func add_small_frame(at: Vector2, cols: int, rows: int) -> void:
+	small_frames.append([at, cols, rows])
+	_build_box()
+
+
 ## Removes frames added after the first `keep`, with their text.
 func pop_frames(keep: int) -> void:
 	while frames.size() > keep:
@@ -87,6 +97,7 @@ func pop_frames(keep: int) -> void:
 
 
 var frames: Array = []
+var small_frames: Array = []
 var _box_node: Node2D
 
 
@@ -99,7 +110,7 @@ func _build_box() -> void:
 	for c in _box_node.get_children():
 		c.queue_free()
 	var menu = Assets.rsk("MENU")
-	if frames.is_empty() or menu == null:
+	if (frames.is_empty() and small_frames.is_empty()) or menu == null:
 		return
 	var mat := ShaderMaterial.new()
 	mat.shader = SHADER
@@ -107,19 +118,32 @@ func _build_box() -> void:
 	mat.set_shader_parameter("palette", palette_tex)
 	_box_node.material = mat
 	for f in frames:
+		# frames of any pixel size: the last column and the bottom edge are
+		# pinned to the far side and overlap the middle pieces
 		var r: Rect2 = f
-		var cols := int(r.size.x) / 32
-		var rows := (int(r.size.y) - 24) / 16
+		var cols := maxi(2, ceili(r.size.x / 32.0))
+		var rows := maxi(1, ceili((r.size.y - 24) / 16.0))
 		for col in cols:
 			var base := 0x53 if col == 0 else (0x59 if col == cols - 1 else 0x56)
-			var x := r.position.x + col * 32
+			var x := minf(r.position.x + col * 32, r.end.x - 32)
 			var y := r.position.y
 			_box_piece(menu, base, Vector2(x, y), mat)
-			y += 12
 			for k in rows:
-				_box_piece(menu, base + 1, Vector2(x, y), mat)
-				y += 16
-			_box_piece(menu, base + 2, Vector2(x, y), mat)
+				_box_piece(menu, base + 1, Vector2(x, minf(y + 12 + k * 16, r.end.y - 28)), mat)
+			_box_piece(menu, base + 2, Vector2(x, r.end.y - 12), mat)
+
+
+	for f in small_frames:
+		var y: float = f[0].y
+		for row in [[0x50, 8]] + range(f[2]).map(func(_k): return [0xA8, 16]) + [[0xAB, 0]]:
+			var x: float = f[0].x
+			_box_piece(menu, row[0], Vector2(x, y), mat)
+			x += 24
+			for k in f[1]:
+				_box_piece(menu, row[0] + 1, Vector2(x, y), mat)
+				x += 8
+			_box_piece(menu, row[0] + 2, Vector2(x, y), mat)
+			y += row[1]
 
 
 func _box_piece(menu: Dictionary, frame: int, at: Vector2, mat: Material) -> void:
@@ -244,9 +268,7 @@ func _draw() -> void:
 	for it in items:
 		match it["kind"]:
 			"picture":
-				var mat := _picture_material()
-				# draw_texture_rect_region ignores materials, so use a child sprite cache
-				_draw_indexed(it["tex"], it["region"], it["at"])
+				pass    # child sprites, see _sync_pictures
 			"glyph":
 				if font == null:
 					continue
@@ -254,7 +276,8 @@ func _draw() -> void:
 				if r.size == Vector2.ZERO:
 					draw_string(ThemeDB.fallback_font, it["at"] + Vector2(0, 13), it["ch"], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, pal_color(it["c"]))
 					continue
-				draw_texture_rect_region(font, Rect2(it["at"] + Vector2(1, 1), r.size), r, pal_color(it["m"]))
+				if it["m"] >= 0:
+					draw_texture_rect_region(font, Rect2(it["at"] + Vector2(1, 1), r.size), r, pal_color(it["m"]))
 				draw_texture_rect_region(font, Rect2(it["at"], r.size), r, pal_color(it["c"]))
 	if waiting_icon.x >= 0:
 		var t := Time.get_ticks_msec() / 250 % 2
@@ -264,43 +287,40 @@ func _draw() -> void:
 var _pic_nodes := {}
 
 
-func _picture_material() -> ShaderMaterial:
-	return null
-
-
-## Pictures are indexed images: draw them through Sprite2D children with the
-## palette shader (CanvasItem.draw_* calls cannot carry a different material).
-func _draw_indexed(tex: Texture2D, region: Rect2, at: Vector2) -> void:
-	var key := "%s:%s" % [at, region]
-	var s: Sprite2D = _pic_nodes.get(key)
-	if s == null:
-		s = Sprite2D.new()
-		s.centered = false
-		s.region_enabled = true
-		var m := ShaderMaterial.new()
-		m.shader = SHADER
-		m.set_shader_parameter("transparent_index", 0xFE)
-		s.material = m
-		add_child(s)
-		_pic_nodes[key] = s
-	s.texture = tex
-	s.region_rect = region
-	s.position = at
-	(s.material as ShaderMaterial).set_shader_parameter("palette", palette_tex)
-	s.show_behind_parent = true
-	s.visible = true
-	s.set_meta("used", true)
+## Pictures are indexed images: they are Sprite2D children with the palette
+## shader (CanvasItem.draw_* calls cannot carry a different material). The
+## children are made and freed here, never from _draw, since changing the
+## tree while it is being drawn crashes the renderer.
+func _sync_pictures() -> void:
+	var wanted := {}
+	for it in items:
+		if it["kind"] == "picture":
+			wanted["%s:%s" % [it["at"], it["region"]]] = it
+	for k in _pic_nodes.keys():
+		if not wanted.has(k):
+			_pic_nodes[k].queue_free()
+			_pic_nodes.erase(k)
+	for k in wanted:
+		var it: Dictionary = wanted[k]
+		var s: Sprite2D = _pic_nodes.get(k)
+		if s == null:
+			s = Sprite2D.new()
+			s.centered = false
+			s.region_enabled = true
+			s.show_behind_parent = true
+			var m := ShaderMaterial.new()
+			m.shader = SHADER
+			m.set_shader_parameter("transparent_index", 0xFE)
+			s.material = m
+			add_child(s)
+			_pic_nodes[k] = s
+		s.texture = it["tex"]
+		s.region_rect = it["region"]
+		s.position = it["at"]
+		(s.material as ShaderMaterial).set_shader_parameter("palette", palette_tex)
 
 
 func _process(_d: float) -> void:
 	if waiting_icon.x >= 0:
 		queue_redraw()
-	# hide picture sprites whose item is gone
-	var wanted := {}
-	for it in items:
-		if it["kind"] == "picture":
-			wanted["%s:%s" % [it["at"], it["region"]]] = true
-	for k in _pic_nodes.keys():
-		if not wanted.has(k):
-			_pic_nodes[k].queue_free()
-			_pic_nodes.erase(k)
+	_sync_pictures()

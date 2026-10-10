@@ -27,6 +27,7 @@ const KIND_SLOTS := {7: [0], 3: [1], 5: [2], 2: [3], 6: [4], 1: [5, 6], 4: [7, 8
 var game: Game
 var ov: Overlay
 var data: Dictionary
+var menu_closed := false        # a skill warped away, so the menu ends
 
 
 func _init(g: Game) -> void:
@@ -166,8 +167,9 @@ func choose(labels: Array, at: Vector2, sel := 0, rows := 8, extra := Callable()
 	var r := ov.add_frame(at, cols, n)
 	var top := clampi(sel - n + 1, 0, maxi(0, labels.size() - n))
 	if Overlay.auto_continue:
+		# tests: a random pick, often a cancel so menu loops always end
 		ov.pop_frames(keep)
-		return 0
+		return -1 if randi() % 3 == 0 else randi() % labels.size()
 	while true:
 		_clear_rect(r)
 		for k in n:
@@ -230,7 +232,10 @@ func open() -> void:
 			0: await _status()
 			1: await _items()
 			2: await _equip()
-			3: await _skills()
+			3:
+				await _skills()
+				if menu_closed:
+					return
 			4:
 				if await _system():
 					break
@@ -405,7 +410,7 @@ func _equip() -> void:
 		var cands := [{"slot": -1, "id": 0}] if k < 5 else []
 		for e in _inventory():
 			var it = _item(int(e["id"]))
-			if it == null or it.get("slot") == null:
+			if it == null:
 				continue
 			var kind := int(it.get("kind", 0)) & 0x0F
 			if k in KIND_SLOTS.get(kind, []):
@@ -492,8 +497,36 @@ func _skills() -> void:
 	if i < 0:
 		return
 	var sk: Dictionary = ids[i]
-	if int(sk.get("effect", 0)) != 1:
+	# RPG 0x33C5: three buttons after picking a skill: cast, describe, make
+	var act := await choose(["施展", "說明", "製作"], Vector2(160, 8))
+	if act < 0:
+		return
+	if act == 1:
+		await message("%s　%s %d" % [String(sk["name"]), _cost_name(sk), int(sk["cost"])])
+		return
+	if act == 2:
+		await make_charm(m, sk)
+		return
+	# RPG 0x341D: skill +0D bit 0x80 = battle only; 0x34AB: effect 5 土地神
+	# needs a map without 0x4000, effect 6 乘龍 a map with 0x8000 (world map)
+	var effect := int(sk.get("effect", 0))
+	var map_id := game.field.map_id
+	if int(sk.get("target_flags", 0)) & 0x80 or not (effect in [1, 5, 6]) \
+			or (effect == 5 and map_id & 0x4000) or (effect == 6 and not (map_id & 0x8000)):
 		await message("在此無法使用！")
+		return
+	if effect == 5 or effect == 6:
+		var dest := GameState.w(0x14) if effect == 5 else await _pick_place()
+		if dest < 0:
+			return
+		if not _pay(rec, sk):
+			await message("數值不夠！無法用此奇術！")
+			return
+		ov.clear()
+		game.play_sfx(int(sk.get("sfx", 0)) if effect == 5 else 0x13)
+		# the entry points of the 16 places, DS:3313
+		await game.warp(GameState.w(0x3313 + dest * 2))
+		menu_closed = true
 		return
 	var t := m
 	if String(sk.get("target", "")) != "self":
@@ -508,6 +541,60 @@ func _skills() -> void:
 			_heal_member(m, mm, sk)
 	elif not _heal_member(m, t, sk):
 		await message("此人無法使用！")
+
+
+## 製作 (RPG 0x3573): a charm skill writes its charm item (skill +16) into
+## the last bag slot and the bag is packed; no cost is paid.
+func make_charm(m: int, sk: Dictionary) -> bool:
+	if GameState.w(_rec(m) + 0x08) & 0xE000:
+		await message("瀕死昏迷中！")
+		return false
+	if GameState.w(INV + (INV_N - 1) * 2) != 0:
+		await message("物品滿了！無法再增加！")
+		return false
+	var id := int(sk.get("w16", 0))
+	GameState.setw(INV + (INV_N - 1) * 2, id)
+	pack_bag()
+	game.play_sfx(0x15)
+	return true
+
+
+## RPG 0x3FC8: close the gaps in the bag.
+static func pack_bag() -> void:
+	var ids := []
+	for k in INV_N:
+		var v := GameState.w(INV + k * 2)
+		if v != 0:
+			ids.append(v)
+	for k in INV_N:
+		GameState.setw(INV + k * 2, ids[k] if k < ids.size() else 0)
+
+
+func _cost_name(sk: Dictionary) -> String:
+	match String(sk.get("cost_type", "")):
+		"mp":
+			return "仙術"
+		"stamina":
+			return "體力"
+		"herbs":
+			return "藥材"
+	return ""
+
+
+## 乘龍念法 (RPG 0x378E): the places whose flag DS:612+n is 1, by name.
+func _pick_place() -> int:
+	var nj = Assets.load_json("places.json")
+	var names: Array = nj.get("places", []) if nj is Dictionary else []
+	var idx := []
+	var labels := []
+	for n in names.size():
+		if GameState.b(0x612 + n) == 1:
+			idx.append(n)
+			labels.append(names[n])
+	if idx.is_empty():
+		return -1
+	var k := await choose(labels, Vector2(56, 16), 0, 10)
+	return idx[k] if k >= 0 else -1
 
 
 func _pay(rec: int, sk: Dictionary) -> bool:

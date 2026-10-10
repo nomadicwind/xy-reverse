@@ -39,6 +39,9 @@ func new_game() -> void:
 	journal = []
 	var nj = Assets.load_json("names.json") if Assets.available() else null
 	names = nj["names"].duplicate() if nj is Dictionary else ["", "", "", ""]
+	var saved = NameEntry.load_saved()
+	if saved != null:
+		names = saved
 
 
 ## Replaces the name placeholders in script text with the current names.
