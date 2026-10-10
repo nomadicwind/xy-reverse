@@ -78,6 +78,8 @@ func _ready() -> void:
 					ex.dump_path = b.substr(7)
 				elif b.begins_with("--resume="):
 					resume = b.substr(9)
+				elif b.begins_with("--plan="):
+					ex.plan = Array(b.substr(7).split(","))
 			await ex.run(float(a.substr(10)), at, resume)
 			get_tree().quit()
 			return

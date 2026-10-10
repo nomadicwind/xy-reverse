@@ -332,6 +332,7 @@ var debug := false
 
 var zone_cells := {}
 var _avoid := false
+var plan: Array = []           # --plan=key,key: targets to try first
 
 
 func _go_somewhere() -> bool:
@@ -353,9 +354,24 @@ func _go_somewhere() -> bool:
 		for g in t[1]:
 			if reach.has(g):
 				var score := v * 1000 + worn + randi() % 50 - (500 if key.begins_with("new:") else 0)
+				# objects never examined in any story state come first too
+				if ":o:" in t[0] and not visits.has(t[0]):
+					score -= 500
 				if score < best_score:
 					best_score = score
 					best = [key, g, t[1][g]]
+				break
+	# a --plan of target keys goes first, in order, whenever reachable
+	if not plan.is_empty():
+		for t in _targets():
+			# a key starting with ":" matches any entry of the scene
+			if t[0] == plan[0] or (plan[0].begins_with(":") and t[0].ends_with(plan[0])):
+				for g in t[1]:
+					if reach.has(g):
+						best = [t[0] + "|plan", g, t[1][g]]
+						print("[explore] plan: %s" % plan[0])
+						plan.pop_front()
+						break
 				break
 	# go round other zones when the goal can be reached that way
 	if best != null:
@@ -388,6 +404,8 @@ func _walk_to(goal: int, face: int) -> bool:
 		if not prev.has(goal):
 			return false
 		for st in _path(prev, goal):
+			if debug:
+				print("[explore]   step %d to %d from %d" % [st[0], st[1], game.field.leader_cell()])
 			if await _tick(false, st[0]):
 				return true
 			if game.field.leader_cell() != st[1]:

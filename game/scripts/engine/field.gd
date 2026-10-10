@@ -622,6 +622,8 @@ func _run_path(a: Actor) -> void:
 		3: _path_move(a, -map_w, 3, pc)
 		5: _path_move(a, 1, 9, pc)
 		6: _path_move(a, -1, 6, pc)
+		8:
+			_path_patch_map(a, pc)
 		7:
 			a.base_frame = paths[pc + 1]
 			a.path_pc += 1
@@ -642,6 +644,35 @@ func _run_path(a: Actor) -> void:
 			event_requested.emit(obj2)
 		_:
 			pass
+
+
+## Path op 8 (RPG.EXE 0x5766): write a block of map cells. Args: target
+## offset, width and height in cells, then the cells row by row. Moving
+## walls and opened passages (CHNA5's tomb) are made this way.
+func _path_patch_map(a: Actor, pc: int) -> void:
+	var dst := _path_word(pc + 1)
+	var bw := _path_word(pc + 3)
+	var bh := _path_word(pc + 5)
+	a.path_pc += 6 + bw * bh * 2
+	# 0x544D targets [DS:0xE9] and skips flagged cells; not seen in use yet
+	var special := dst == 0x544D
+	if special:
+		push_warning("path map patch at 0x544D not supported")
+		return
+	var c0 := (dst - base) / 2
+	var src := pc + 7
+	for r in bh:
+		for k in bw:
+			var i := c0 + r * map_w + k
+			if i >= 0 and i < cells.size():
+				set_cell_value(i, _path_word(src))
+			src += 2
+
+
+func _path_word(o: int) -> int:
+	if o + 1 >= path_bytes.size():
+		return 0
+	return path_bytes[o] | (path_bytes[o + 1] << 8)
 
 
 func _path_move(a: Actor, stepv: int, dir: int, pc: int) -> void:

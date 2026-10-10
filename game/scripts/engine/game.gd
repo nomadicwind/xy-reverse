@@ -195,7 +195,12 @@ func _zone(z: Array, accept: bool) -> bool:
 			# RPG.EXE 0x11EF: state 8 = switched off, 9 = needs the action key
 			var st := field.objects[i].state
 			if st != 8 and (st != 9 or accept):
+				var ref := field.entry_ref
 				await run_object_event(i)
+				# a script warp moved the party: don't walk on with the key
+				# that was meant for the old place
+				if field.entry_ref != ref:
+					return true
 		# RPG.EXE 0x1CD2: the tick goes on to the keys after an object zone,
 		# so the party can walk out of a zone whose event does nothing
 		return false
