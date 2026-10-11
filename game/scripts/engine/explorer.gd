@@ -352,7 +352,7 @@ func _targets() -> Array:
 				# rectangle can be larger than its flagged cells
 				if f.cell(r * w + c) & 0x1000:
 					goals[r * w + c] = face
-		out.append([key, goals, act & 0xFFF, "%d:z:%d" % [f.entry_ref, zi]])
+		out.append([key, goals, act & 0xFFF, "%d:z:%d" % [f.entry_ref, zi], act])
 	return out
 
 
@@ -468,6 +468,8 @@ var zone_cells := {}
 var _avoid := false
 var ended := false              # the story finished and went back to the title
 var plan: Array = []           # --plan=key,key: targets to try first
+var plan_fails := {}
+var plan_numbered := false
 
 
 func _go_somewhere() -> bool:
@@ -503,14 +505,22 @@ func _go_somewhere() -> bool:
 	# a --plan of target keys goes first whenever one is reachable. Keys are
 	# tried in order, but one that can't be used yet doesn't hold up the rest:
 	# the story may have taken another way past it.
+	var picked := ""
+	var picked_dest := -1
 	if not plan.is_empty():
 		var targets := _targets()
+		# number the steps once so repeated keys stay apart
+		if not plan_numbered:
+			plan_numbered = true
+			for i in plan.size():
+				plan[i] = "%d#%s" % [i, plan[i]]
 		for pi in plan.size():
-			# "!key" waits for every key before it, e.g. going back to
+			var pk: String = plan[pi].get_slice("#", 1)
+			# "!key" waits for the step just before it, e.g. going back to
 			# someone after a trip
-			var pk: String = plan[pi]
 			if pk.begins_with("!"):
-				if pi > 0:
+				var n := int(plan[pi].get_slice("#", 0))
+				if n > 0 and plan.any(func(x): return x.begins_with("%d#" % (n - 1))):
 					continue
 				pk = pk.substr(1)
 			for t in targets:
@@ -523,7 +533,9 @@ func _go_somewhere() -> bool:
 							break
 					if best != null and best[0].ends_with("|plan"):
 						print("[explore] plan: %s (careful %s, %d/%d cells)" % [pk, careful.has(best[1]), careful.size(), reach.size()])
-						plan.remove_at(pi)
+						picked = plan[pi]
+						if t.size() > 4 and not (int(t[4]) & 0x4000):
+							picked_dest = int(t[4]) & 0xFFF
 					elif debug:
 						print("[explore] plan %s unreachable: goals %s leader %d" % [pk, t[1].keys(), game.field.leader_cell()])
 					break
@@ -537,7 +549,18 @@ func _go_somewhere() -> bool:
 	visits[best[0]] = visits.get(best[0], 0) + 1
 	var base_key: String = best[0].get_slice("|", 0)
 	visits[base_key] = visits.get(base_key, 0) + 1
+	var ref0 := game.field.entry_ref
+	var runs0: int = game.vm.runs
 	var r := await _walk_to(best[1], best[2])
+	# a plan step is used up once it got somewhere; a walk pushed off course
+	# (or into another doorway) tries again, a few times
+	if picked != "":
+		var ok: bool = game.field.entry_ref != ref0 or game.vm.runs != runs0 or game.field.leader_cell() == best[1]
+		if picked_dest >= 0 and game.field.entry_ref != ref0 and game.vm.runs == runs0:
+			ok = game.field.entry_ref == picked_dest
+		plan_fails[picked] = plan_fails.get(picked, 0) + (0 if ok else 1)
+		if ok or plan_fails[picked] >= 4:
+			plan.erase(picked)
 	if debug:
 		var f := game.field
 		print("[explore] -> %s goal %d now at %d entry %d result %s runs %d" % [best[0], best[1], f.leader_cell(), f.entry_ref, r, game.vm.runs])
