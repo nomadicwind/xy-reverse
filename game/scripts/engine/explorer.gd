@@ -57,12 +57,18 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 	game.finished.connect(func():
 		print("[explore] the end: back to the title after %d steps" % steps)
 		ended = true)
+	plan_src = plan.duplicate()
 	if resume != "":
 		GameState.new_game()
 		var saved = JSON.parse_string(FileAccess.get_file_as_string(resume))
 		game.load_saved(saved)
 		for r in saved.get("meta", {}).get("seen", []):
 			entries_seen[int(r)] = 1
+		# the same --plan again: go on with the steps not yet used
+		var m: Dictionary = saved.get("meta", {})
+		if m.has("plan") and m.get("plan_src", []) == plan:
+			plan = Array(m["plan"])
+			plan_numbered = true
 		if start_entry >= 0:
 			# jump to another place with the resumed story state
 			game.field.load_entry(start_entry)
@@ -181,7 +187,7 @@ func _note_scene() -> void:
 		best_step = steps
 		_remember_best()
 		best_state = GameState.to_save()
-		best_state["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
+		best_state["meta"] = _meta()
 		if dump_path != "":
 			var f := FileAccess.open(dump_path.get_basename() + ".best.json", FileAccess.WRITE)
 			if f:
@@ -202,11 +208,11 @@ func _note_scene() -> void:
 				history.pop_back()
 			best_state = history.pop_back()
 			restarts_here = 0
-			game.load_saved(best_state.duplicate(true))
+			_load_state(best_state)
 			# winning the lost flags back counts as progress again
 			best_flags = _flag_count()
 			print("[explore] backtracking to an earlier state (flags %d, entry %d)" % [best_flags, game.field.entry_ref])
-		game.load_saved(best_state.duplicate(true))
+		_load_state(best_state)
 		print("[explore] no progress for %d steps, back to flags %d (restart %d)" % [STALL_STEPS, best_flags, restarts])
 	var ref := game.field.entry_ref
 	if not entries_seen.has(ref):
@@ -217,7 +223,7 @@ func _note_scene() -> void:
 		if fc == best_flags:
 			_remember_best()
 			best_state = GameState.to_save()
-			best_state["meta"] = {"pos": game.field.party_place()}
+			best_state["meta"] = _meta()
 	entries_seen[ref] = entries_seen.get(ref, 0) + 1
 	if ref != _last_ref:
 		if debug:
@@ -234,9 +240,21 @@ func _note_scene() -> void:
 
 
 ## The game state between two moves, for --resume.
+## Back to a saved state, with the plan steps that were left then.
+func _load_state(st: Dictionary) -> void:
+	game.load_saved(st.duplicate(true))
+	var m: Dictionary = st.get("meta", {})
+	if m.has("plan"):
+		plan = Array(m["plan"]).duplicate()
+
+
+func _meta() -> Dictionary:
+	return {"pos": game.field.party_place(), "seen": entries_seen.keys(), "plan": plan.duplicate(), "plan_src": plan_src}
+
+
 func _dump() -> void:
 	var d := GameState.to_save()
-	d["meta"] = {"pos": game.field.party_place(), "seen": entries_seen.keys()}
+	d["meta"] = _meta()
 	var f := FileAccess.open(dump_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
@@ -470,6 +488,7 @@ var ended := false              # the story finished and went back to the title
 var plan: Array = []           # --plan=key,key: targets to try first
 var plan_fails := {}
 var plan_numbered := false
+var plan_src: Array = []     # the --plan as given, to resume it
 
 
 func _go_somewhere() -> bool:
