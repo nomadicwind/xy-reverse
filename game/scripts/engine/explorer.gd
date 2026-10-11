@@ -500,27 +500,28 @@ func _go_somewhere() -> bool:
 					best_score = score
 					best = [key, g, t[1][g]]
 				break
-	# a --plan of target keys goes first, in order, whenever reachable
+	# a --plan of target keys goes first whenever one is reachable. Keys are
+	# tried in order, but one that can't be used yet doesn't hold up the rest:
+	# the story may have taken another way past it.
 	if not plan.is_empty():
-		for t in _targets():
-			# a key starting with ":" matches any entry of the scene
-			var raw: String = t[3] if t.size() > 3 else t[0]
-			if plan[0] in [t[0], raw] or _same_scene_key(plan[0], raw):
-				for g in _goal_order(t[1], careful, reach):
-					if reach.has(g):
-						best = [t[0] + "|plan", g, t[1][g]]
-						print("[explore] plan: %s (careful %s, %d/%d cells)" % [plan[0], careful.has(g), careful.size(), reach.size()])
-						plan.pop_front()
-						break
-				if debug and (best == null or not best[0].ends_with("|plan")):
-					var f2 := game.field
-					print("[explore] plan %s unreachable: goals %s leader %d" % [plan[0], t[1].keys(), f2.leader_cell()])
+		var targets := _targets()
+		for pi in plan.size():
+			for t in targets:
+				# a key starting with ":" matches any entry of the scene
+				var raw: String = t[3] if t.size() > 3 else t[0]
+				if plan[pi] in [t[0], raw] or _same_scene_key(plan[pi], raw):
+					for g in _goal_order(t[1], careful, reach):
+						if reach.has(g):
+							best = [t[0] + "|plan", g, t[1][g]]
+							break
+					if best != null and best[0].ends_with("|plan"):
+						print("[explore] plan: %s (careful %s, %d/%d cells)" % [plan[pi], careful.has(best[1]), careful.size(), reach.size()])
+						plan.remove_at(pi)
+					elif debug:
+						print("[explore] plan %s unreachable: goals %s leader %d" % [plan[pi], t[1].keys(), game.field.leader_cell()])
+					break
+			if best != null and best[0].ends_with("|plan"):
 				break
-	if debug and not plan.is_empty() and (best == null or not best[0].ends_with("|plan")):
-		var zs := []
-		for z in game.field.zones:
-			zs.append("%x@%x" % [int(z[3]), game.field.cell(game.field.pos_to_cell(int(z[1])))])
-		print("[explore] plan %s not here; zones %s" % [plan[0], zs])
 	# go round other zones when the goal can be reached that way
 	if best != null:
 		_avoid = careful.has(best[1])
