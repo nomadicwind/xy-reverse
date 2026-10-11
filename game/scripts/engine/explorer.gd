@@ -568,7 +568,20 @@ func _goal_order(goals: Dictionary, careful: Dictionary, reach: Dictionary) -> A
 			safe.append(g)
 		elif reach.has(g):
 			rest.append(g)
+	# nearest first: the far side of an object means walking round it, and
+	# the way round often crosses a doorway (or the object itself)
+	var near := func(a, b): return _depth(careful if careful.has(a) else reach, a) < _depth(careful if careful.has(b) else reach, b)
+	safe.sort_custom(near)
+	rest.sort_custom(near)
 	return safe + rest
+
+
+func _depth(prev: Dictionary, c: int) -> int:
+	var n := 0
+	while prev.has(c) and int(prev[c][0]) >= 0 and n < 100000:
+		c = int(prev[c][0])
+		n += 1
+	return n
 
 
 ## Walk until the leader stands on cell, re-planning when pushed off the
