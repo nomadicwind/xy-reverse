@@ -506,19 +506,26 @@ func _go_somewhere() -> bool:
 	if not plan.is_empty():
 		var targets := _targets()
 		for pi in plan.size():
+			# "!key" waits for every key before it, e.g. going back to
+			# someone after a trip
+			var pk: String = plan[pi]
+			if pk.begins_with("!"):
+				if pi > 0:
+					continue
+				pk = pk.substr(1)
 			for t in targets:
 				# a key starting with ":" matches any entry of the scene
 				var raw: String = t[3] if t.size() > 3 else t[0]
-				if plan[pi] in [t[0], raw] or _same_scene_key(plan[pi], raw):
+				if pk in [t[0], raw] or _same_scene_key(pk, raw):
 					for g in _goal_order(t[1], careful, reach):
 						if reach.has(g):
 							best = [t[0] + "|plan", g, t[1][g]]
 							break
 					if best != null and best[0].ends_with("|plan"):
-						print("[explore] plan: %s (careful %s, %d/%d cells)" % [plan[pi], careful.has(best[1]), careful.size(), reach.size()])
+						print("[explore] plan: %s (careful %s, %d/%d cells)" % [pk, careful.has(best[1]), careful.size(), reach.size()])
 						plan.remove_at(pi)
 					elif debug:
-						print("[explore] plan %s unreachable: goals %s leader %d" % [plan[pi], t[1].keys(), game.field.leader_cell()])
+						print("[explore] plan %s unreachable: goals %s leader %d" % [pk, t[1].keys(), game.field.leader_cell()])
 					break
 			if best != null and best[0].ends_with("|plan"):
 				break
