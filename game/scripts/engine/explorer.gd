@@ -244,7 +244,7 @@ func _note_scene() -> void:
 func _load_state(st: Dictionary) -> void:
 	game.load_saved(st.duplicate(true))
 	var m: Dictionary = st.get("meta", {})
-	if m.has("plan"):
+	if m.has("plan") and m.get("plan_src", []) == plan_src:
 		plan = Array(m["plan"]).duplicate()
 
 
