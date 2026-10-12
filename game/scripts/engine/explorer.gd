@@ -379,6 +379,14 @@ func _reach(avoid := false) -> Dictionary:
 	var f := game.field
 	var w := f.map_w
 	var start := f.leader_cell()
+	# objects in state 6 go away when walked into (game.gd _touch): their
+	# cells are blocked now but not in the way
+	var soft := {}
+	for a in f.objects:
+		if a.state == 6 and a.pos != 0:
+			for k in 3:
+				soft[f.pos_to_cell(a.pos) + k] = true
+	var free := func(c: int) -> bool: return soft.has(c) or f._free(c)
 	var prev := {start: [-1, -1]}
 	var queue := [start]
 	var head := 0
@@ -391,16 +399,16 @@ func _reach(avoid := false) -> Dictionary:
 			match d:
 				0:
 					n = c + w
-					ok = f._free3(n)
+					ok = free.call(n - 1) and free.call(n) and free.call(n + 1)
 				3:
 					n = c - w
-					ok = f._free3(n)
+					ok = free.call(n - 1) and free.call(n) and free.call(n + 1)
 				6:
 					n = c - 1
-					ok = c % w > 0 and f._free(n)
+					ok = c % w > 0 and free.call(n)
 				9:
 					n = c + 1
-					ok = c % w < w - 1 and f._free(n)
+					ok = c % w < w - 1 and free.call(n)
 			if ok and not prev.has(n):
 				prev[n] = [c, d]
 				# zone cells can be reached but not crossed: walking through
