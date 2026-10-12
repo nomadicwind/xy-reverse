@@ -58,6 +58,9 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 		print("[explore] the end: back to the title after %d steps" % steps)
 		ended = true)
 	plan_src = plan.duplicate()
+	# number the steps so repeated keys stay apart
+	for i in plan.size():
+		plan[i] = "%d#%s" % [i, plan[i]]
 	if resume != "":
 		GameState.new_game()
 		var saved = JSON.parse_string(FileAccess.get_file_as_string(resume))
@@ -68,7 +71,6 @@ func run(seconds: float, start_entry := -1, resume := "") -> void:
 		var m: Dictionary = saved.get("meta", {})
 		if m.has("plan") and m.get("plan_src", []) == plan:
 			plan = Array(m["plan"])
-			plan_numbered = true
 		if start_entry >= 0:
 			# jump to another place with the resumed story state
 			game.field.load_entry(start_entry)
@@ -495,7 +497,6 @@ var _avoid := false
 var ended := false              # the story finished and went back to the title
 var plan: Array = []           # --plan=key,key: targets to try first
 var plan_fails := {}
-var plan_numbered := false
 var plan_src: Array = []     # the --plan as given, to resume it
 
 
@@ -536,11 +537,6 @@ func _go_somewhere() -> bool:
 	var picked_dest := -1
 	if not plan.is_empty():
 		var targets := _targets()
-		# number the steps once so repeated keys stay apart
-		if not plan_numbered:
-			plan_numbered = true
-			for i in plan.size():
-				plan[i] = "%d#%s" % [i, plan[i]]
 		for pi in plan.size():
 			var pk: String = plan[pi].get_slice("#", 1)
 			# "!key" waits for the step just before it, e.g. going back to
