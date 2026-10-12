@@ -20,7 +20,7 @@ import struct
 from pathlib import Path
 
 from . import battle, scenes, script
-from .containers import is_compressed_block, lsk_entries, split_offsets16
+from .containers import is_compressed_block, lsk_entries, offsets16, split_offsets16
 from .lzh import decompress
 from .pic import decode_pic
 
@@ -57,13 +57,16 @@ def _tilemap(data):
     if not parts:
         return None
     chunks = []
-    for p in parts:
+    for p, off in zip(parts, offsets16(data)):
         if len(p) < 4:
             continue
         h, w = struct.unpack_from("<HH", p, 0)
         if w == 0 or h == 0 or len(p) < 4 + w * h * 2:
             return None if not chunks else chunks
-        chunks.append({"w": w, "h": h, "cells": list(struct.unpack_from("<%dH" % (w * h), p, 4))})
+        # "base": byte offset of the first cell inside the entry, which is
+        # what object, zone and view offsets in the scenes count from
+        chunks.append({"w": w, "h": h, "base": off + 4,
+                       "cells": list(struct.unpack_from("<%dH" % (w * h), p, 4))})
     return chunks or None
 
 
@@ -230,7 +233,30 @@ def export_names(game, out, glyphs):
         g = b[2 + 2 * n + 30 * k:2 + 2 * n + 30 * (k + 1)]
         slots.append("" if not any(g) else by_bits.get(g, "?"))
     names = ["".join(slots[i:i + 4]) for i in range(0, len(slots), 4)]
-    (out / "names.json").write_text(json.dumps({"names": names}, ensure_ascii=False))
+    meta = {"names": names}
+    meta.update(_naming_screen(game))
+    (out / "names.json").write_text(json.dumps(meta, ensure_ascii=False))
+
+
+def _naming_screen(game):
+    """Texts of the naming screen (RPG.EXE 0x1820) from the data segment:
+    the prompt at DS:2598, the slot labels at DS:25C6 and three pages of
+    9 x 11 characters at DS:25FE (rows end with ##, pages are 0xD8 bytes)."""
+    rpg = _find(game, "RPG.EXE").read_bytes()
+    ds = struct.unpack_from("<H", rpg, 8)[0] * 16 + 0xF290
+
+    def text(off):
+        end = rpg.index(b"$$", ds + off)
+        return rpg[ds + off:end].decode("big5", "replace")
+
+    pages = []
+    for p in range(3):
+        rows = []
+        for r in range(9):
+            a = ds + 0x25FE + p * 0xD8 + r * 24
+            rows.append(rpg[a:a + 22].decode("big5", "replace"))
+        pages.append(rows)
+    return {"prompt": text(0x2598), "slots": text(0x25C6), "grid": pages}
 
 
 def export_rsk(game, out, name):
@@ -240,13 +266,15 @@ def export_rsk(game, out, name):
     if not f.exists():
         return 0
     frames = []
+    d = out / "rsk"
+    d.mkdir(parents=True, exist_ok=True)
     for c in split_offsets16(decompress(f.read_bytes())):
+        if len(c) == 771:  # a palette part (3-byte header), as in DOR4.RSK
+            _palette_png(d / (f.stem + ".pal.png"), b"\0\0" + c[3:771])
         try:
             frames.append(decode_pic(c) if _looks_like_pic(c) else (1, 1, b"\xfe"))
         except (struct.error, IndexError):
             frames.append((1, 1, b"\xfe"))
-    d = out / "rsk"
-    d.mkdir(parents=True, exist_ok=True)
     W, H, px, rects = _atlas(frames)
     _png_l8(d / (f.stem + ".png"), W, H, px)
     (d / (f.stem + ".json")).write_text(json.dumps({"frames": rects}))
@@ -299,10 +327,21 @@ def export_engine(game, out):
         summary[pack] = export_pack(game, out, pack)
     summary["glyphs"] = export_font(game, out)
     summary["menu"] = export_rsk(game, out, "MENU.RSK")
+    # the dragon cart cut-scene of op 0x50 (RPG 0x6AB9)
+    summary["dor"] = [export_rsk(game, out, "DOR%d.RSK" % n) for n in range(1, 5)]
     summary["battle"] = export_battle(game, out)
     # RPG.EXE's initialised data segment is the new-game state (party, money,
     # flags). DS = 0xF29, so it starts at image offset 0xF290.
     rpg = _find(game, "RPG.EXE").read_bytes()
     hdr = struct.unpack_from("<H", rpg, 8)[0] * 16
     (out / "rpg_ds.bin").write_bytes(rpg[hdr + 0xF290:hdr + 0xF290 + 0x8000])
+    summary["places"] = export_places(rpg[hdr + 0xF290:hdr + 0xF290 + 0x8000], out)
     return summary
+
+
+def export_places(ds, out):
+    """乘龍念法 destinations: 16 names of 4 glyphs at DS:3333 (RPG 0x382C).
+    Their entry points are the words at DS:3313, read from the state block."""
+    names = [ds[0x3333 + 8 * i:0x333B + 8 * i].decode("big5", "replace").strip("\u3000 ") for i in range(16)]
+    (out / "places.json").write_text(json.dumps({"places": names}, ensure_ascii=False))
+    return len(names)

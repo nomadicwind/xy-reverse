@@ -1,5 +1,7 @@
 # SWDA (轩辕剑外传：枫之舞) battle system — FIG.EXE notes
 
+> Corrections and the 煉妖術 / 防禦 / summoning rules are in [CREATURES.md](CREATURES.md) (section 0 lists where this file is wrong).
+
 Notation. `FIG xxxx` = offset in FIG.EXE's code segment 0 (image after the
 512-byte MZ header, disassemble it to follow along). `DS:xxxx` = FIG data segment
 (paragraph 0xE2C, image offset 0xE2C0; the first 0x681 bytes mirror RPG.EXE's

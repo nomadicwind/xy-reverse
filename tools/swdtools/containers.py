@@ -9,11 +9,8 @@ def lsk_entries(data):
     return [data[a:b] for a, b in zip(offs, offs[1:])]
 
 
-def split_offsets16(data):
-    """Same layout with u16 offsets; used inside decompressed blocks.
-
-    The table is not always sorted (MENU.RSK), so it ends at the smallest
-    offset and each entry runs to the next larger offset."""
+def offsets16(data):
+    """The u16 offset table of a split_offsets16 container, in table order."""
     offs = []
     lowest = len(data)
     while 2 * len(offs) < lowest and 2 * len(offs) + 2 <= len(data):
@@ -21,6 +18,15 @@ def split_offsets16(data):
         offs.append(o)
         if o >= 2 * len(offs):
             lowest = min(lowest, o)
+    return offs
+
+
+def split_offsets16(data):
+    """Same layout with u16 offsets; used inside decompressed blocks.
+
+    The table is not always sorted (MENU.RSK), so it ends at the smallest
+    offset and each entry runs to the next larger offset."""
+    offs = offsets16(data)
     ends = sorted(set(o for o in offs if o <= len(data)) | {len(data)})
     out = []
     for a in offs:

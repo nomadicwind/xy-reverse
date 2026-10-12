@@ -20,3 +20,34 @@ jobs:
           unzip -q godot.zip
       - name: Import project and parse scripts
         run: ./Godot_v4.3-stable_linux.x86_64 --headless --path game --import
+  export-macos:
+    # engine only: the game data stays with each player (scripts/extract.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: tpl
+        with:
+          path: ~/.local/share/godot/export_templates/4.3.stable
+          key: godot-templates-4.3-macos
+      - name: Download Godot 4.3
+        run: |
+          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q godot.zip
+      - name: Install macOS export template
+        if: steps.tpl.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o t.tpz https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          unzip -q t.tpz templates/macos.zip templates/version.txt
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
+          mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
+      - name: Export
+        run: |
+          ./Godot_v4.3-stable_linux.x86_64 --headless --path game --import
+          mkdir -p build
+          ./Godot_v4.3-stable_linux.x86_64 --headless --path game --export-release macOS "$PWD/build/SWDA-macos.zip"
+          test -s build/SWDA-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SWDA-macos
+          path: build/SWDA-macos.zip

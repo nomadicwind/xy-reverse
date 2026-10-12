@@ -54,3 +54,21 @@ def test_map_count():
     maps = parse_maps(lsk_entries((Path(GAME) / "MAP.LSK").read_bytes()))
     assert len(maps) == 116
     assert (maps[0]["width"], maps[0]["height"]) == (120, 120)
+
+
+def test_tilemap_chunks_follow_table_order():
+    # like MAP.LSK #187: the table lists the field map second in the file
+    # but first in the table; cells are counted from the entry start
+    from swdtools.engine import _tilemap
+    small = struct.pack("<HH", 1, 2) + struct.pack("<2H", 7, 8)
+    big = struct.pack("<HH", 1, 3) + struct.pack("<3H", 1, 2, 3)
+    end = b"\xff\xff\x00\xff"
+    table_len = 6
+    off_small = table_len
+    off_big = off_small + len(small)
+    off_end = off_big + len(big)
+    data = struct.pack("<3H", off_big, off_small, off_end) + small + big + end
+    chunks = _tilemap(data)
+    assert [(c["w"], c["h"]) for c in chunks] == [(3, 1), (2, 1)]
+    assert chunks[0]["base"] == off_big + 4
+    assert chunks[0]["cells"] == [1, 2, 3]
