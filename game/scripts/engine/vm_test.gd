@@ -130,3 +130,44 @@ static func run_stress(game: Game, n: int) -> void:
 		if k % 100 == 0:
 			print("[stress] %d loads, %d nodes, static %d KB" % [k, game.get_tree().get_node_count(), OS.get_static_memory_usage() / 1024])
 	print("[stress] done, %d loads" % n)
+
+
+## Story battles at normal strength: load a saved state, set every member's
+## max HP back to the level table (the explorer's god mode raises it), heal
+## everyone as after an inn and fight each group a few times with automatic
+## commands. --bosstest=STATE --groups=a,b,... [--tries=N]
+static func run_bosstest(game: Game, state: String, groups: Array, tries: int) -> void:
+	Overlay.auto_continue = true
+	Engine.time_scale = 64.0
+	var saved = JSON.parse_string(FileAccess.get_file_as_string(state))
+	var tables := {}
+	for t in Battle.battle_data().get("level_tables", []):
+		tables[int(t["character"])] = t["rows"]
+	for g in groups:
+		var wins := 0
+		var info := ""
+		for i in tries:
+			game.load_saved(saved)
+			info = ""
+			for k in GameState.party_count():
+				var rec := GameState.PARTY + k * GameState.PARTY_REC
+				var ch := GameState.w(0x89 + k * 6) / 12
+				var lvl := GameState.w(rec + 0x31)
+				var rows: Array = tables.get(ch, [])
+				if lvl >= 1 and lvl <= rows.size():
+					GameState.setw(rec + 0x2F, int(rows[lvl - 1]["hp_max"]))
+				GameState.setw(rec + 0x2D, GameState.w(rec + 0x2F))
+				GameState.setw(rec + 0x55, GameState.w(rec + 0x57))
+				GameState.setw(rec + 0x35, GameState.w(rec + 0x37))
+				GameState.setw(rec + 0x08, 0)
+				info += " L%d/%dhp" % [lvl, GameState.w(rec + 0x2F)]
+			var b := Battle.new(game)
+			b.max_rounds = 60
+			game.add_child(b)
+			game.battle_scene = b
+			var r: int = await b.run(int(g))
+			game.battle_scene = null
+			if r == Battle.Result.WIN:
+				wins += 1
+		print("[bosstest] group %d: %d/%d won, party%s" % [int(g), wins, tries, info])
+	print("[bosstest] done")

@@ -5,7 +5,8 @@ extends Node
 ## .gdignore), so the same code works in the editor and in exported builds,
 ## where players point the game at their own extracted copy.
 ## Search order: --data=<dir>, res://assets/extracted/engine,
-## <executable dir>/data/engine, user://engine.
+## <executable dir>/data/engine, on macOS also data/engine next to the .app,
+## user://engine.
 
 const PACK_BY_ID := {0: "SA", 2: "MAP", 4: "CD", 6: "DO"}
 
@@ -42,7 +43,11 @@ func _find_root() -> String:
 		if a.begins_with("--data="):
 			cands.append(a.substr(7))
 	cands.append("res://assets/extracted/engine")
-	cands.append(OS.get_executable_path().get_base_dir().path_join("data/engine"))
+	var exe_dir := OS.get_executable_path().get_base_dir()
+	cands.append(exe_dir.path_join("data/engine"))
+	# SWDA Remake.app/Contents/MacOS: the folder that holds the .app
+	if exe_dir.ends_with(".app/Contents/MacOS"):
+		cands.append(exe_dir.get_base_dir().get_base_dir().get_base_dir().path_join("data/engine"))
 	cands.append("user://engine")
 	for c in cands:
 		if FileAccess.file_exists(c.path_join("mapa.json")):

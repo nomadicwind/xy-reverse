@@ -40,3 +40,14 @@ scripts/export.sh macOS      # 也可以是 Windows / Linux / Android
 ```
 
 Android 还需要 Android SDK 和签名密钥，在 Godot 的编辑器设置里配置。
+
+### macOS 试玩包
+
+CI 的 `export-macos` 任务会打一个只含引擎、不含游戏数据的包（Actions 页面里的 `SWDA-macos` 附件）。数据用自己的原版游戏提取：
+
+```bash
+unzip SWDA-macos.zip -d ~/Games/SWDA          # 得到 SWDA Remake.app
+EXTRACT_OUT=~/Games/SWDA/data scripts/extract.sh /path/to/swda
+```
+
+游戏会在 .app 旁边的 `data/engine` 找数据。这个包没有经过 Apple 公证，第一次打开要在 Finder 里右键选“打开”，或者运行 `xattr -dr com.apple.quarantine ~/Games/SWDA/SWDA\ Remake.app`。

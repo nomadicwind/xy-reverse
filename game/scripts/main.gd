@@ -19,7 +19,7 @@ var game: Game
 func _ready() -> void:
 	if not Assets.available():
 		var l := Label.new()
-		l.text = "找不到游戏数据。\n请先运行 scripts/extract.sh。\nNo extracted data found."
+		l.text = "找不到游戏数据。\n请先运行 scripts/extract.sh，\n或把提取出的 data 文件夹放在游戏旁边。\nNo extracted data found."
 		add_child(l)
 		return
 	var args := OS.get_cmdline_user_args()
@@ -48,6 +48,19 @@ func _ready() -> void:
 			game.field.load_entry(8)
 			await get_tree().process_frame
 			await VmTest.run_battles(game)
+			get_tree().quit()
+			return
+		elif a.begins_with("--bosstest="):
+			_start_game()
+			await get_tree().process_frame
+			var groups := []
+			var tries := 5
+			for b in args:
+				if b.begins_with("--groups="):
+					groups = Array(b.substr(9).split(","))
+				elif b.begins_with("--tries="):
+					tries = int(b.substr(8))
+			await VmTest.run_bosstest(game, a.substr(11), groups, tries)
 			get_tree().quit()
 			return
 		elif a.begins_with("--stress="):
