@@ -131,14 +131,15 @@ func to_save() -> Dictionary:
 	var sc := {}
 	for k in scenes:
 		var r: Dictionary = scenes[k]
-		sc[str(k)] = {"objects": r.get("objects", []), "map_id": r.get("map_id", 0), "unknown": r.get("unknown", 0)}
+		# copies: a state kept in memory must not change with the live scene
+		sc[str(k)] = {"objects": r.get("objects", []).duplicate(true), "map_id": r.get("map_id", 0), "unknown": r.get("unknown", 0)}
 	return {
 		"version": 1,
 		"ds": Marshalls.raw_to_base64(ds),
 		"entry": current_entry,
 		"scenes": sc,
-		"names": names,
-		"journal": journal,
+		"names": names.duplicate(true),
+		"journal": journal.duplicate(true),
 	}
 
 
